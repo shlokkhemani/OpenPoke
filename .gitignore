@@ -19,3 +19,8 @@ yarn-error.log*
 .venv/
 __pycache__/
 *.pyc
+
+# Agent data logs
+server/data/conversation/*.log
+server/data/execution_agents/*.log
+server/data/execution_agents/roster.json

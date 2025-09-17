@@ -50,6 +50,7 @@ class Settings(BaseModel):
     composio_gmail_auth_config_id: Optional[str] = Field(default=os.getenv("COMPOSIO_GMAIL_AUTH_CONFIG_ID"))
     chat_history_path: Optional[str] = Field(default=os.getenv("OPENPOKE_CHAT_HISTORY_PATH"))
     conversation_log_path: Optional[str] = Field(default=os.getenv("OPENPOKE_CONVERSATION_LOG_PATH"))
+    execution_agents_dir: Optional[str] = Field(default=os.getenv("OPENPOKE_EXECUTION_AGENTS_DIR"))
 
     @property
     def cors_allow_origins(self) -> List[str]:
@@ -76,6 +77,16 @@ class Settings(BaseModel):
     @property
     def resolved_chat_history_path(self) -> Path:
         return self.resolved_conversation_log_path
+
+    @property
+    def resolved_execution_agents_dir(self) -> Path:
+        raw = (self.execution_agents_dir or "").strip()
+        if raw:
+            path = Path(raw)
+            if not path.is_absolute():
+                path = (Path(__file__).parent / path).resolve()
+            return path
+        return (Path(__file__).parent / "data" / "execution_agents").resolve()
 
 
 @lru_cache(maxsize=1)

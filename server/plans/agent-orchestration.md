@@ -13,14 +13,14 @@
 - [x] Construct a system-prompt composer that injects: (a) static persona instructions, (b) full conversation transcript, and (c) `<active_agents>` roster block so the model receives history via the system field while preserving the OpenRouter message array API.
 
 ## Phase 3 · Execution-Agent Journal Persistence
-- [ ] Establish `data/execution_agents/` as the home for per-agent logs; implement deterministic filename sanitization (e.g., `slugify(name) + .log`).
-- [ ] Provide append helpers that record `<request>` and `<action performed>` entries (via a `record_action` interface) with ISO timestamps and optional metadata JSON blocks.
+- [x] Establish `data/execution_agents/` as the home for per-agent logs; implement deterministic filename sanitization (e.g., `slugify(name) + .log`).
+- [x] Provide lightweight append helpers that record `<request>` and `<action performed>` entries with ISO timestamps.
 - [ ] Create loaders that rebuild the last 10 actions per agent on startup to seed the roster immediately.
-- [ ] Ensure writes are atomic (temp-file + rename) and encapsulate locking so multiple requests cannot interleave writes.
+- [x] Ensure writes are serialized with per-agent locks so multiple requests cannot interleave writes.
 
 ## Phase 4 · Active-Agent Roster Management
-- [ ] Introduce a roster manager that owns `{ name, recentActions }` records, sourcing data from the execution-agent logs and updating in-memory state reactively.
-- [ ] Persist roster metadata to `data/execution_agents/roster.json` (or similar) so agent identities and recent history survive restarts.
+- [x] Introduce a roster manager that owns `{ name, recentActions }` records, sourcing data from the execution-agent logs and updating in-memory state reactively.
+- [x] Persist roster metadata to `data/execution_agents/roster.json` (or similar) so agent identities and recent history survive restarts.
 - [ ] Define serialization for the system prompt using dedicated tags (e.g., `<active_agents>` with nested `<agent>` blocks) that slot into the composed system instructions.
 - [ ] Expose management hooks for future lifecycle operations (retire, rename) even if not immediately surfaced.
 
@@ -42,7 +42,7 @@
 - [ ] Implement the execution-agent dispatcher that consumes instructions from `sendmessageto_agent`, runs the appropriate Gmail tool, and writes `<action performed>` entries with outcomes and errors.
 - [x] Update or replace existing Gmail service helpers to align with the new data flow (structured responses, error propagation);
       now exposed via `execute_gmail_tool` and used by the execution-agent tool registry.
-- [x] Replace execution-agent tool definitions with Gmail Composio actions (create draft, send draft, forward, reply) to match the revised flow.
+- [x] Replace execution-agent tool definitions with Gmail Composio actions (create draft, send draft, forward, reply) to match the revised flow and append outcome summaries to the per-agent journal.
 - [ ] Provide hooks for future expansion (multiple toolkits, parallel agents) while keeping the current scope focused on Gmail.
 
 ## Phase 8 · Output & Display Logic

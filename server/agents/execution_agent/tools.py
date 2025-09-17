@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional
 
+import json
+
+from server.services.execution_log import get_execution_agent_logs
 from server.services.gmail import execute_gmail_tool
 
 # OpenAI/OpenRouter-compatible tool schema list for the execution agent.
@@ -194,11 +197,28 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
         },
     },
 ]
+_LOG_STORE = get_execution_agent_logs()
 
 
 def _execute(tool_name: str, composio_user_id: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-    """Thin wrapper that forwards arguments to the Gmail tool executor."""
-    return execute_gmail_tool(tool_name, composio_user_id, arguments=arguments)
+    """Execute a Gmail tool and record the action for the execution agent journal."""
+    agent_name = composio_user_id or "gmail-execution-agent"
+    payload = {k: v for k, v in arguments.items() if v is not None}
+    payload_str = json.dumps(payload, ensure_ascii=False, sort_keys=True) if payload else "{}"
+    try:
+        result = execute_gmail_tool(tool_name, composio_user_id, arguments=payload)
+    except Exception as exc:
+        _LOG_STORE.record_action(
+            agent_name,
+            description=f"{tool_name} failed | args={payload_str} | error={exc}",
+        )
+        raise
+
+    _LOG_STORE.record_action(
+        agent_name,
+        description=f"{tool_name} succeeded | args={payload_str}",
+    )
+    return result
 
 
 def gmail_create_draft(

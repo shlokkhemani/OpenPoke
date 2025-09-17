@@ -10,7 +10,7 @@ from starlette.concurrency import iterate_in_threadpool
 from ..config import Settings
 from ..logging_config import logger
 from ..models import ChatRequest
-from ..openrouter_client import stream_chat_completion
+from ..openrouter_client import OpenRouterError, stream_chat_completion
 from ..prompts import get_interaction_system_prompt
 from ..utils import error_response, sse_iter
 from .history import chat_history_store
@@ -49,14 +49,18 @@ def build_chat_stream_response(
         },
     )
 
-    deltas = stream_chat_completion(
-        model=model_name,
-        messages=messages,
-        system=system_prompt,
-        api_key=api_key,
-        temperature=payload.temperature,
-        max_tokens=payload.max_tokens,
-    )
+    try:
+        deltas = stream_chat_completion(
+            model=model_name,
+            messages=messages,
+            system=system_prompt,
+            api_key=api_key,
+            temperature=payload.temperature,
+            max_tokens=payload.max_tokens,
+        )
+    except OpenRouterError as exc:
+        logger.warning("openrouter error", extra={"error": str(exc), "request_id": request_id})
+        return error_response(str(exc), status_code=status.HTTP_502_BAD_GATEWAY)
 
     assistant_chunks: List[str] = []
     stream_completed = False

@@ -149,45 +149,94 @@ def fetch_status(payload: GmailStatusPayload) -> JSONResponse:
         )
 
 
-def fetch_emails(payload: GmailFetchPayload) -> JSONResponse:
-    arguments = payload.arguments or {}
-    if not isinstance(arguments, dict):
-        arguments = {}
-    if payload.max_results is not None:
-        arguments.setdefault("max_results", payload.max_results)
-    else:
-        arguments.setdefault("max_results", 3)
-    if payload.include_payload is not None:
-        arguments.setdefault("include_payload", payload.include_payload)
-    else:
-        arguments.setdefault("include_payload", True)
-    if payload.verbose is not None:
-        arguments.setdefault("verbose", payload.verbose)
-    else:
-        arguments.setdefault("verbose", False)
-    arguments.setdefault("user_id", arguments.get("user_id", "me"))
+def _normalize_tool_response(result: Any) -> Dict[str, Any]:
+    payload_dict: Optional[Dict[str, Any]] = None
+    try:
+        if hasattr(result, "model_dump"):
+            payload_dict = result.model_dump()  # type: ignore[assignment]
+        elif hasattr(result, "dict"):
+            payload_dict = result.dict()  # type: ignore[assignment]
+    except Exception:
+        payload_dict = None
+
+    if payload_dict is None:
+        try:
+            if hasattr(result, "model_dump_json"):
+                payload_dict = json.loads(result.model_dump_json())
+        except Exception:
+            payload_dict = None
+
+    if payload_dict is None:
+        if isinstance(result, dict):
+            payload_dict = result
+        else:
+            payload_dict = {"repr": str(result)}
+
+    return payload_dict
+
+
+def execute_gmail_tool(
+    tool_name: str,
+    composio_user_id: str,
+    *,
+    arguments: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    prepared_arguments: Dict[str, Any] = {}
+    if isinstance(arguments, dict):
+        for key, value in arguments.items():
+            if value is not None:
+                prepared_arguments[key] = value
+
+    prepared_arguments.setdefault("user_id", "me")
 
     try:
         Composio = _gmail_import_client()
         client = Composio()
-        res = client.client.tools.execute("GMAIL_FETCH_EMAILS", user_id=payload.user_id, arguments=arguments)
-        payload_dict: Optional[Dict[str, Any]] = None
-        try:
-            if hasattr(res, "model_dump"):
-                payload_dict = res.model_dump()
-            elif hasattr(res, "dict"):
-                payload_dict = res.dict()
-        except Exception:
-            payload_dict = None
-        if payload_dict is None:
-            try:
-                if hasattr(res, "model_dump_json"):
-                    payload_dict = json.loads(res.model_dump_json())
-            except Exception:
-                payload_dict = None
-        if payload_dict is None:
-            payload_dict = {"repr": str(res)}
-        return JSONResponse({"ok": True, "response": payload_dict})
+        result = client.client.tools.execute(
+            tool_name,
+            user_id=composio_user_id,
+            arguments=prepared_arguments,
+        )
+        return _normalize_tool_response(result)
+    except Exception as exc:
+        logger.exception(
+            "gmail tool execution failed",
+            extra={"tool": tool_name, "user_id": composio_user_id},
+        )
+        raise RuntimeError(f"{tool_name} invocation failed: {exc}") from exc
+
+
+def fetch_emails(payload: GmailFetchPayload) -> JSONResponse:
+    arguments: Dict[str, Any] = {}
+    if isinstance(payload.arguments, dict):
+        for key, value in payload.arguments.items():
+            if value is not None:
+                arguments[key] = value
+
+    if payload.max_results is not None:
+        arguments["max_results"] = payload.max_results
+    else:
+        arguments.setdefault("max_results", 3)
+
+    if payload.include_payload is not None:
+        arguments["include_payload"] = payload.include_payload
+    else:
+        arguments.setdefault("include_payload", True)
+
+    if payload.verbose is not None:
+        arguments["verbose"] = payload.verbose
+    else:
+        arguments.setdefault("verbose", False)
+
+    arguments.setdefault("user_id", arguments.get("user_id", "me"))
+
+    try:
+        response = execute_gmail_tool(
+            "GMAIL_FETCH_EMAILS",
+            payload.user_id,
+            arguments=arguments,
+        )
+        return JSONResponse({"ok": True, "response": response})
     except Exception as exc:
         logger.exception("gmail fetch failed", extra={"user_id": payload.user_id})
         return error_response(

@@ -8,7 +8,7 @@ from urllib.parse import urlparse, parse_qs
 from typing import Optional
 
 # Ensure top-level package imports work when running as module
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+BASE_DIR = os.path.dirname(__file__)
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 

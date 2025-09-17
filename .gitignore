@@ -1,0 +1,21 @@
+# Node / Next.js
+node_modules/
+.next/
+web/node_modules/
+web/.next/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Envs
+.env*
+
+# OS
+.DS_Store
+
+# Python
+.venv/
+__pycache__/
+*.pyc

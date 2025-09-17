@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+/* Custom styles */
+.btn {
+  @apply inline-flex items-center justify-center rounded-md border border-transparent bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.input {
+  @apply w-full rounded-full border border-gray-300 bg-white px-4 py-2.5 text-sm shadow-sm placeholder:text-gray-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-60;
+}
+
+.card {
+  @apply rounded-xl border border-gray-200 bg-white shadow-sm;
+}
+
+.chip {
+  @apply inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700;
+}
+
+/* iMessage-style chat enhancements */
+.chat-wrap {
+  @apply mx-auto w-full max-w-2xl;
+}
+
+.chat-bg {
+  @apply bg-[#F5F5F7];
+  background-image: radial-gradient(circle at 10% 10%, #ffffff 0%, #f5f5f7 60%);
+}
+
+.bubble-out {
+  @apply inline-block max-w-[80%] rounded-2xl bg-brand-600 px-4 py-2.5 text-sm text-white shadow-sm;
+}
+
+.bubble-in {
+  @apply inline-block max-w-[80%] rounded-2xl bg-gray-100 px-4 py-2.5 text-sm text-gray-900 shadow-sm border border-gray-200;
+}
+
+.bubble-tail-out {
+  @apply rounded-br-md;
+}
+
+.bubble-tail-in {
+  @apply rounded-bl-md;
+}
+
+/* Typing indicator (three bouncing dots) */
+.typing {
+  @apply flex items-center gap-1 rounded-2xl bg-gray-100 px-3 py-2 border border-gray-200;
+}
+.typing-dot {
+  width: 6px;
+  height: 6px;
+  @apply rounded-full bg-gray-500 opacity-70;
+  animation: typing-bounce 1s infinite ease-in-out;
+}
+.typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.typing-dot:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes typing-bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: .6; }
+  40% { transform: translateY(-4px); opacity: 1; }
+}

@@ -207,28 +207,19 @@ def execute_gmail_tool(
 
 
 def fetch_emails(payload: GmailFetchPayload) -> JSONResponse:
-    arguments: Dict[str, Any] = {}
-    if isinstance(payload.arguments, dict):
-        for key, value in payload.arguments.items():
-            if value is not None:
-                arguments[key] = value
+    arguments: Dict[str, Any] = (
+        {k: v for k, v in (payload.arguments or {}).items() if v is not None}
+        if isinstance(payload.arguments, dict)
+        else {}
+    )
 
-    if payload.max_results is not None:
-        arguments["max_results"] = payload.max_results
-    else:
-        arguments.setdefault("max_results", 3)
-
-    if payload.include_payload is not None:
-        arguments["include_payload"] = payload.include_payload
-    else:
-        arguments.setdefault("include_payload", True)
-
-    if payload.verbose is not None:
-        arguments["verbose"] = payload.verbose
-    else:
-        arguments.setdefault("verbose", False)
-
-    arguments.setdefault("user_id", arguments.get("user_id", "me"))
+    arguments.setdefault("max_results", payload.max_results if payload.max_results is not None else 3)
+    arguments.setdefault(
+        "include_payload",
+        payload.include_payload if payload.include_payload is not None else True,
+    )
+    arguments.setdefault("verbose", payload.verbose if payload.verbose is not None else False)
+    arguments.setdefault("user_id", "me")
 
     try:
         response = execute_gmail_tool(

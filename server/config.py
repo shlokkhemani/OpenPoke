@@ -49,6 +49,7 @@ class Settings(BaseModel):
     docs_url: Optional[str] = Field(default=os.getenv("OPENPOKE_DOCS_URL", "/docs"))
     composio_gmail_auth_config_id: Optional[str] = Field(default=os.getenv("COMPOSIO_GMAIL_AUTH_CONFIG_ID"))
     chat_history_path: Optional[str] = Field(default=os.getenv("OPENPOKE_CHAT_HISTORY_PATH"))
+    conversation_log_path: Optional[str] = Field(default=os.getenv("OPENPOKE_CONVERSATION_LOG_PATH"))
 
     @property
     def cors_allow_origins(self) -> List[str]:
@@ -63,15 +64,18 @@ class Settings(BaseModel):
         return self.docs_url or "/docs"
 
     @property
-    def resolved_chat_history_path(self) -> Path:
-        raw = (self.chat_history_path or "").strip()
+    def resolved_conversation_log_path(self) -> Path:
+        raw = (self.conversation_log_path or self.chat_history_path or "").strip()
         if raw:
             path = Path(raw)
-        else:
-            path = Path(__file__).parent / "data" / "chat_history.json"
-        if not path.is_absolute():
-            path = (Path(__file__).parent / path).resolve()
-        return path
+            if not path.is_absolute():
+                path = (Path(__file__).parent / path).resolve()
+            return path
+        return (Path(__file__).parent / "data" / "conversation" / "poke_conversation.log").resolve()
+
+    @property
+    def resolved_chat_history_path(self) -> Path:
+        return self.resolved_conversation_log_path
 
 
 @lru_cache(maxsize=1)

@@ -1,99 +1,109 @@
 from __future__ import annotations
 
-import secrets
-from typing import List, Optional
+from typing import Optional
 
-from fastapi import Request, status
-from fastapi.responses import JSONResponse, StreamingResponse
-from starlette.concurrency import iterate_in_threadpool
+from fastapi import status
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from ..config import Settings
 from ..logging_config import logger
-from ..models import ChatRequest
+from ..models import ChatMessage, ChatRequest
 from ..openrouter_client import OpenRouterError, stream_chat_completion
 from ..prompts import get_interaction_system_prompt
-from ..utils import error_response, sse_iter
-from .history import chat_history_store
+from ..utils import error_response
+from .conversation_log import get_conversation_log
 
 
-def build_chat_stream_response(
-    payload: ChatRequest,
-    *,
-    request: Optional[Request],
-    settings: Settings,
-    request_id: Optional[str] = None,
-) -> StreamingResponse | JSONResponse:
-    messages = payload.openrouter_messages()
-    if not messages:
-        return error_response("Missing messages or prompt", status_code=status.HTTP_400_BAD_REQUEST)
+def _extract_latest_user_message(payload: ChatRequest) -> Optional[ChatMessage]:
+    for message in reversed(payload.messages):
+        if message.role.lower().strip() == "user" and message.content.strip():
+            return message
+    return None
+
+
+def _compose_system_prompt(base_prompt: str, transcript: str, active_agents: str) -> str:
+    sections: list[str] = []
+
+    if base_prompt.strip():
+        sections.append(base_prompt.strip())
+
+    cleaned_transcript = transcript.strip()
+    if cleaned_transcript:
+        sections.append("<conversation_log>")
+        sections.append(cleaned_transcript)
+        sections.append("</conversation_log>")
+
+    sections.append("<active_agents>")
+    sections.append(active_agents.strip() or "None")
+    sections.append("</active_agents>")
+
+    return "\n\n".join(sections)
+
+
+def handle_chat_request(payload: ChatRequest, *, settings: Settings) -> PlainTextResponse | JSONResponse:
+    conversation_log = get_conversation_log()
+
+    user_message = _extract_latest_user_message(payload)
+    if user_message is None:
+        return error_response("Missing user message", status_code=status.HTTP_400_BAD_REQUEST)
+
+    user_content = user_message.content.strip()
+    if not user_content:
+        return error_response("Empty user message", status_code=status.HTTP_400_BAD_REQUEST)
+
+    conversation_log.record_user_message(user_content)
+    transcript = conversation_log.load_transcript()
+
+    base_system_prompt = (payload.system or "").strip() or get_interaction_system_prompt()
+    system_prompt = _compose_system_prompt(base_system_prompt, transcript, active_agents="")
 
     api_key = (payload.api_key or settings.openrouter_api_key or "").strip()
     if not api_key:
         return error_response("Missing api_key", status_code=status.HTTP_400_BAD_REQUEST)
 
     model_name = (payload.model or settings.default_model or "openrouter/auto").strip()
-    system_prompt = (payload.system or "").strip() or get_interaction_system_prompt()
-
-    chat_history_store.replace(messages)
-
-    if not request_id:
-        request_id = secrets.token_hex(8)
 
     logger.info(
         "chat request",
         extra={
             "model": model_name,
-            "messages": len(messages),
-            "has_system": bool(system_prompt),
-            "request_id": request_id,
+            "message_length": len(user_content),
         },
     )
 
     try:
         deltas = stream_chat_completion(
             model=model_name,
-            messages=messages,
+            messages=[{"role": "user", "content": user_content}],
             system=system_prompt,
             api_key=api_key,
             temperature=payload.temperature,
             max_tokens=payload.max_tokens,
         )
+
+        assistant_chunks: list[str] = []
+        for delta in deltas:
+            if delta.get("type") == "content":
+                text = str(delta.get("text") or "")
+                if text:
+                    assistant_chunks.append(text)
     except OpenRouterError as exc:
-        logger.warning("openrouter error", extra={"error": str(exc), "request_id": request_id})
+        logger.warning("openrouter error", extra={"error": str(exc)})
         return error_response(str(exc), status_code=status.HTTP_502_BAD_GATEWAY)
 
-    assistant_chunks: List[str] = []
-    stream_completed = False
+    assistant_text = "".join(assistant_chunks).strip()
 
-    def history_tracked_deltas():
-        nonlocal stream_completed
-        try:
-            for delta in deltas:
-                if delta.get("type") == "content":
-                    text = str(delta.get("text") or "")
-                    if text:
-                        assistant_chunks.append(text)
-                elif delta.get("type") == "event" and delta.get("event") == "done":
-                    stream_completed = True
-                yield delta
-        finally:
-            if stream_completed and assistant_chunks:
-                chat_history_store.append({"role": "assistant", "content": "".join(assistant_chunks)})
+    if not assistant_text:
+        return error_response("Assistant returned empty response", status_code=status.HTTP_502_BAD_GATEWAY)
 
-    tracked_deltas = history_tracked_deltas()
+    conversation_log.record_agent_message(assistant_text)
+    conversation_log.record_reply(assistant_text)
 
-    async def event_source():
-        async for chunk in iterate_in_threadpool(sse_iter(tracked_deltas)):
-            yield chunk
+    response_payload = ChatMessage(role="assistant", content=assistant_text)
 
-    headers = {
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
-        "X-Accel-Buffering": "no",
-        "X-OpenPoke-Model": model_name,
-        "X-Request-ID": request_id,
-    }
-    if request and request.client:
-        headers["X-Client-Host"] = request.client.host
+    # Update log with assistant message already above; respond with plain text so the
+    # Next.js proxy can stream or render the content without JSON parsing.
+    return PlainTextResponse(response_payload.content)
 
-    return StreamingResponse(event_source(), media_type="text/event-stream; charset=utf-8", headers=headers)
+
+__all__ = ["handle_chat_request"]

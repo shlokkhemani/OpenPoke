@@ -1,32 +1,34 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import Response, StreamingResponse
+from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
 
 from ..config import Settings, get_settings
-from ..models import ChatHistoryClearResponse, ChatHistoryResponse, ChatMessage, ChatRequest
-from ..services import build_chat_stream_response, chat_history_store
+from ..models import ChatHistoryClearResponse, ChatHistoryResponse, ChatRequest
+from ..services import get_conversation_log, handle_chat_request
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
-@router.post("/stream", response_class=StreamingResponse, summary="Stream chat completions")
-async def chat_stream(
+@router.post("/stream", response_class=JSONResponse, summary="Submit a chat message and receive a completion")
+async def chat_send(
     payload: ChatRequest,
-    request: Request,
     settings: Settings = Depends(get_settings),
-) -> Response:
-    request_id = request.headers.get("x-request-id")
-    return build_chat_stream_response(payload, request=request, settings=settings, request_id=request_id)
+) -> JSONResponse:
+    return handle_chat_request(payload, settings=settings)
 
 
 @router.get("/history", response_model=ChatHistoryResponse)
-def get_history() -> ChatHistoryResponse:
-    history = [ChatMessage.model_validate(item) for item in chat_history_store.get_history()]
-    return ChatHistoryResponse(messages=history)
+def chat_history() -> ChatHistoryResponse:
+    log = get_conversation_log()
+    return ChatHistoryResponse(messages=log.to_chat_messages())
 
 
 @router.delete("/history", response_model=ChatHistoryClearResponse)
 def clear_history() -> ChatHistoryClearResponse:
-    chat_history_store.clear()
+    log = get_conversation_log()
+    log.clear()
     return ChatHistoryClearResponse()
+
+
+__all__ = ["router"]

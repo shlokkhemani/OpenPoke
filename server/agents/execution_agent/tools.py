@@ -197,8 +197,8 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
 
 
 def _execute(tool_name: str, composio_user_id: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-    filtered_arguments = {k: v for k, v in arguments.items() if v is not None}
-    return execute_gmail_tool(tool_name, composio_user_id, arguments=filtered_arguments)
+    """Thin wrapper that forwards arguments to the Gmail tool executor."""
+    return execute_gmail_tool(tool_name, composio_user_id, arguments=arguments)
 
 
 def gmail_create_draft(

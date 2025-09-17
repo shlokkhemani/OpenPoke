@@ -2,7 +2,7 @@
 
 import { useChat } from '@ai-sdk/react';
 import { TextStreamChatTransport } from 'ai';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import SettingsModal, { useSettings } from '@/components/SettingsModal';
 import clsx from 'clsx';
 
@@ -23,6 +23,36 @@ export default function Page() {
   const { messages, sendMessage, status, stop, error, setMessages, clearError } = useChat({
     transport,
   });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadHistory() {
+      try {
+        const res = await fetch('/api/chat/history', { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        if (Array.isArray(data?.messages)) {
+          const hydrated = data.messages
+            .filter((m: any) => typeof m?.role === 'string' && typeof m?.content === 'string' && m.content.trim().length > 0)
+            .map((m: any, idx: number) => ({
+              id: `history-${idx}-${m.role}`,
+              role: m.role,
+              parts: [{ type: 'text', text: m.content }],
+            }));
+          setMessages(hydrated);
+        }
+      } catch (err) {
+        console.error('Failed to load chat history', err);
+      }
+    }
+
+    loadHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, [setMessages]);
 
   const canSubmit = status === 'ready' && settings.apiKey.trim().length > 0;
 
@@ -79,7 +109,21 @@ export default function Page() {
           </button>
           <button
             className="rounded-md border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50"
-            onClick={() => setMessages([])}
+            onClick={async () => {
+              let cleared = false;
+              try {
+                const res = await fetch('/api/chat/history', { method: 'DELETE' });
+                cleared = res.ok;
+                if (!res.ok) {
+                  console.error('Failed to clear chat history', res.statusText);
+                }
+              } catch (err) {
+                console.error('Failed to clear chat history', err);
+              }
+              if (cleared) {
+                setMessages([]);
+              }
+            }}
           >
             Clear
           </button>

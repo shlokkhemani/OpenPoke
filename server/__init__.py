@@ -1,5 +1,8 @@
-"""Python chat server package for OpenPoke.
+"""OpenPoke Python server package.
 
-Exposes the HTTP server in `pyserver.server`.
+Exports the FastAPI application as `app`.
 """
 
+from .app import app
+
+__all__ = ["app"]

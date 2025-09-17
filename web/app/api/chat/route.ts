@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   }
 
   const serverBase = process.env.PY_SERVER_URL || 'http://localhost:8001';
-  const serverPath = process.env.PY_CHAT_PATH || '/chat';
+  const serverPath = process.env.PY_CHAT_PATH || '/api/v1/chat/stream';
   const urlBase = `${serverBase.replace(/\/$/, '')}${serverPath}`;
 
   const configuredMethod = (process.env.PY_SERVER_METHOD || 'POST').toUpperCase();
@@ -94,15 +94,6 @@ export async function POST(req: Request) {
     if (resp.status === 405 || resp.status === 501) {
       console.warn(`[chat-proxy][${rid}] ${resp.status} from upstream; retrying with alternate method`);
       resp = configuredMethod === 'GET' ? await requestPOST(urlBase) : await requestGET(urlBase);
-    }
-    if (resp.status === 404) {
-      const candidates = ['', '/'];
-      for (const alt of candidates) {
-        const altUrl = `${serverBase.replace(/\\\/$/, '')}${alt}` || serverBase;
-        console.warn(`[chat-proxy][${rid}] 404 at ${urlBase}, retrying ${altUrl}`);
-        resp = configuredMethod === 'GET' ? await requestGET(altUrl) : await requestPOST(altUrl);
-        if (resp.ok || resp.status < 400) break;
-      }
     }
   } catch (e: any) {
     console.error(`[chat-proxy][${rid}] upstream error`, e);

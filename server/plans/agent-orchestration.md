@@ -21,16 +21,16 @@
 ## Phase 4 · Active-Agent Roster Management
 - [x] Introduce a roster manager that owns `{ name, recentActions }` records, sourcing data from the execution-agent logs and updating in-memory state reactively.
 - [x] Persist roster metadata to `data/execution_agents/roster.json` (or similar) so agent identities and recent history survive restarts.
-- [ ] Define serialization for the system prompt using dedicated tags (e.g., `<active_agents>` with nested `<agent>` blocks) that slot into the composed system instructions.
+- [x] Define serialization for the system prompt using dedicated tags (e.g., `<active_agents>` with nested `<agent>` blocks) that slot into the composed system instructions.
 - [ ] Expose management hooks for future lifecycle operations (retire, rename) even if not immediately surfaced.
 
 ## Phase 5 · Interaction Agent Message Flow
 - [x] Rebuild the `/chat` pipeline to use blocking OpenRouter completions, removing streaming-related code (`StreamingResponse`, `sse_iter`, etc.).
 - [x] Return plain-text assistant responses (instead of `{ ok, message }` JSON) so the UI can render content directly while maintaining error JSON for failures.
-- [ ] Ensure the OpenRouter payload retains the user message array while injecting the composed system prompt and `sendmessageto_agent` tool schema only.
-- [ ] Implement transcript truncation safeguards only if absolutely required by token limits, otherwise rely on the append-only log as-is.
-- [ ] Update logging/telemetry to reflect synchronous request handling.
-- [ ] Validate baseline web app flow (message send/receive + history) without tool calls, confirming persistence aligns with new log format.
+- [x] Ensure the OpenRouter payload retains the user message array while injecting the composed system prompt and `sendmessageto_agent` tool schema only.
+- [x] Implement transcript truncation safeguards only if absolutely required by token limits, otherwise rely on the append-only log as-is.
+- [x] Update logging/telemetry to reflect synchronous request handling.
+- [x] Validate baseline web app flow (message send/receive + history) without tool calls, confirming persistence aligns with new log format.
 
 ## Phase 6 · `sendmessageto_agent` Tool Implementation
 - [ ] Define the tool schema with `agent_name` and `instructions` parameters and register it with the interaction agent.

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 import httpx
 
@@ -59,6 +59,7 @@ def stream_chat_completion(
     temperature: Optional[float] = None,
     max_tokens: Optional[int] = None,
     api_key: Optional[str] = None,
+    tools: Optional[List[Dict[str, Any]]] = None,
     base_url: str = OpenRouterBaseURL,
 ) -> Iterator[Dict[str, str]]:
     """Stream chat completions as simple content/event deltas."""
@@ -72,6 +73,8 @@ def stream_chat_completion(
         payload["temperature"] = float(temperature)
     if max_tokens is not None:
         payload["max_tokens"] = int(max_tokens)
+    if tools:
+        payload["tools"] = tools
 
     url = f"{base_url.rstrip('/')}/chat/completions"
 

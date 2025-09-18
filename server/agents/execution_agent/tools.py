@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict, List, Optional
 import json
 
 from server.services.execution_log import get_execution_agent_logs
-from server.services.gmail import execute_gmail_tool
+from server.services.gmail import execute_gmail_tool, _load_gmail_user_id
 
 # OpenAI/OpenRouter-compatible tool schema list for the execution agent.
 TOOL_SCHEMAS: List[Dict[str, Any]] = [
@@ -17,10 +17,6 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "composio_user_id": {
-                        "type": "string",
-                        "description": "Composio user identifier (UUID) tied to the Gmail connection.",
-                    },
                     "recipient_email": {
                         "type": "string",
                         "description": "Primary recipient email for the draft.",
@@ -68,7 +64,7 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                         "required": ["s3key", "name", "mimetype"],
                     },
                 },
-                "required": ["composio_user_id", "recipient_email", "subject", "body"],
+                "required": ["recipient_email", "subject", "body"],
                 "additionalProperties": False,
             },
         },
@@ -81,10 +77,6 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "composio_user_id": {
-                        "type": "string",
-                        "description": "Composio user identifier (UUID) tied to the Gmail connection.",
-                    },
                     "draft_id": {
                         "type": "string",
                         "description": "Identifier of the Gmail draft to send.",
@@ -94,7 +86,7 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                         "description": "Override Gmail user id if not 'me'.",
                     },
                 },
-                "required": ["composio_user_id", "draft_id"],
+                "required": ["draft_id"],
                 "additionalProperties": False,
             },
         },
@@ -107,10 +99,6 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "composio_user_id": {
-                        "type": "string",
-                        "description": "Composio user identifier (UUID) tied to the Gmail connection.",
-                    },
                     "message_id": {
                         "type": "string",
                         "description": "Gmail message id to forward.",
@@ -128,7 +116,7 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                         "description": "Override Gmail user id if not 'me'.",
                     },
                 },
-                "required": ["composio_user_id", "message_id", "recipient_email"],
+                "required": ["message_id", "recipient_email"],
                 "additionalProperties": False,
             },
         },
@@ -141,10 +129,6 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "composio_user_id": {
-                        "type": "string",
-                        "description": "Composio user identifier (UUID) tied to the Gmail connection.",
-                    },
                     "thread_id": {
                         "type": "string",
                         "description": "Gmail thread id to reply to.",
@@ -191,7 +175,7 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                         "description": "Override Gmail user id if not 'me'.",
                     },
                 },
-                "required": ["composio_user_id", "thread_id", "recipient_email", "message_body"],
+                "required": ["thread_id", "recipient_email", "message_body"],
                 "additionalProperties": False,
             },
         },
@@ -202,7 +186,8 @@ _LOG_STORE = get_execution_agent_logs()
 
 def _execute(tool_name: str, composio_user_id: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     """Execute a Gmail tool and record the action for the execution agent journal."""
-    agent_name = composio_user_id or "gmail-execution-agent"
+    # Don't use composio_user_id as agent_name - it's not an agent, it's a user ID
+    agent_name = "gmail-execution-agent"
     payload = {k: v for k, v in arguments.items() if v is not None}
     payload_str = json.dumps(payload, ensure_ascii=False, sort_keys=True) if payload else "{}"
     try:
@@ -222,7 +207,6 @@ def _execute(tool_name: str, composio_user_id: str, arguments: Dict[str, Any]) -
 
 
 def gmail_create_draft(
-    composio_user_id: str,
     recipient_email: str,
     subject: str,
     body: str,
@@ -246,20 +230,24 @@ def gmail_create_draft(
         "user_id": user_id,
         "attachment": attachment,
     }
+    composio_user_id = _load_gmail_user_id()
+    if not composio_user_id:
+        return {"error": "Gmail not connected. Please connect Gmail in settings first."}
     return _execute("GMAIL_CREATE_EMAIL_DRAFT", composio_user_id, arguments)
 
 
 def gmail_execute_draft(
-    composio_user_id: str,
     draft_id: str,
     user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     arguments = {"draft_id": draft_id, "user_id": user_id}
+    composio_user_id = _load_gmail_user_id()
+    if not composio_user_id:
+        return {"error": "Gmail not connected. Please connect Gmail in settings first."}
     return _execute("GMAIL_SEND_DRAFT", composio_user_id, arguments)
 
 
 def gmail_forward_email(
-    composio_user_id: str,
     message_id: str,
     recipient_email: str,
     additional_text: Optional[str] = None,
@@ -271,11 +259,13 @@ def gmail_forward_email(
         "additional_text": additional_text,
         "user_id": user_id,
     }
+    composio_user_id = _load_gmail_user_id()
+    if not composio_user_id:
+        return {"error": "Gmail not connected. Please connect Gmail in settings first."}
     return _execute("GMAIL_FORWARD_MESSAGE", composio_user_id, arguments)
 
 
 def gmail_reply_to_thread(
-    composio_user_id: str,
     thread_id: str,
     recipient_email: str,
     message_body: str,
@@ -297,6 +287,9 @@ def gmail_reply_to_thread(
         "attachment": attachment,
         "user_id": user_id,
     }
+    composio_user_id = _load_gmail_user_id()
+    if not composio_user_id:
+        return {"error": "Gmail not connected. Please connect Gmail in settings first."}
     return _execute("GMAIL_REPLY_TO_THREAD", composio_user_id, arguments)
 
 

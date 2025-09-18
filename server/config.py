@@ -9,8 +9,8 @@ from pydantic import BaseModel, Field
 
 
 def _load_env_file() -> None:
-    """Load server/.env if present."""
-    env_path = Path(__file__).parent / ".env"
+    """Load .env from root directory if present."""
+    env_path = Path(__file__).parent.parent / ".env"
     if not env_path.is_file():
         return
     try:

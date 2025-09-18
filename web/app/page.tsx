@@ -2,7 +2,7 @@
 
 import { useChat } from '@ai-sdk/react';
 import { TextStreamChatTransport } from 'ai';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SettingsModal, { useSettings } from '@/components/SettingsModal';
 import clsx from 'clsx';
 
@@ -24,35 +24,54 @@ export default function Page() {
     transport,
   });
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadHistory() {
+  const loadHistory = useCallback(
+    async ({ signal }: { signal?: AbortSignal } = {}) => {
       try {
-        const res = await fetch('/api/chat/history', { cache: 'no-store' });
+        const res = await fetch('/api/chat/history', { cache: 'no-store', signal });
         if (!res.ok) return;
         const data = await res.json();
-        if (cancelled) return;
-        if (Array.isArray(data?.messages)) {
-          const hydrated = data.messages
-            .filter((m: any) => typeof m?.role === 'string' && typeof m?.content === 'string' && m.content.trim().length > 0)
-            .map((m: any, idx: number) => ({
-              id: `history-${idx}-${m.role}`,
-              role: m.role,
-              parts: [{ type: 'text', text: m.content }],
-            }));
-          setMessages(hydrated);
-        }
+        if (!Array.isArray(data?.messages)) return;
+        if (signal?.aborted) return;
+        const stamp = Date.now();
+        const hydrated = data.messages
+          .filter(
+            (m: any) =>
+              typeof m?.role === 'string' &&
+              typeof m?.content === 'string' &&
+              m.content.trim().length > 0,
+          )
+          .map((m: any, idx: number) => ({
+            id: `history-${stamp}-${idx}-${m.role}`,
+            role: m.role,
+            parts: [{ type: 'text', text: m.content }],
+          }));
+        setMessages(hydrated);
       } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
         console.error('Failed to load chat history', err);
       }
-    }
+    },
+    [setMessages],
+  );
 
-    loadHistory();
-    return () => {
-      cancelled = true;
-    };
-  }, [setMessages]);
+  useEffect(() => {
+    const controller = new AbortController();
+    loadHistory({ signal: controller.signal });
+    return () => controller.abort();
+  }, [loadHistory]);
+
+  const previousStatusRef = useRef(status);
+
+  useEffect(() => {
+    const previous = previousStatusRef.current;
+    previousStatusRef.current = status;
+    if (previous !== status && previous !== 'ready' && status === 'ready') {
+      const controller = new AbortController();
+      loadHistory({ signal: controller.signal });
+      return () => controller.abort();
+    }
+    return undefined;
+  }, [status, loadHistory]);
 
   const canSubmit = status === 'ready' && settings.apiKey.trim().length > 0;
 
@@ -67,12 +86,31 @@ export default function Page() {
         )}
         {messages.map((m, idx) => {
           const isUser = m.role === 'user';
+          const isDraft = m.role === 'draft';
           const next = messages[idx + 1];
           const tail = !next || next.role !== m.role;
-          const text = m.parts.map((p, i) => (p.type === 'text' ? <span key={i}>{p.text}</span> : null));
+          const text = m.parts.map((p, i) => {
+            if (p.type !== 'text') return null;
+            return (
+              <span
+                key={i}
+                className={isDraft ? 'block whitespace-pre-wrap' : undefined}
+              >
+                {p.text}
+              </span>
+            );
+          });
           return (
             <div key={m.id} className={clsx('flex', isUser ? 'justify-end' : 'justify-start')}>
-              <div className={clsx(isUser ? 'bubble-out' : 'bubble-in', tail ? (isUser ? 'bubble-tail-out' : 'bubble-tail-in') : '')}>{text}</div>
+              <div
+                className={clsx(
+                  isUser ? 'bubble-out' : 'bubble-in',
+                  tail ? (isUser ? 'bubble-tail-out' : 'bubble-tail-in') : '',
+                  isDraft && 'whitespace-pre-wrap'
+                )}
+              >
+                {text}
+              </div>
             </div>
           );
         })}

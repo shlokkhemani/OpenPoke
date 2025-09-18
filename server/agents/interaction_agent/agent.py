@@ -33,44 +33,55 @@ def prepare_openrouter_messages(
     return sanitized[-max_messages:] if max_messages > 0 else sanitized
 
 
-def prepare_openrouter_messages_experimental(
+def prepare_message_with_history(
     latest_user_text: str,
+    transcript: str,
+    message_type: str = "user"
 ) -> List[Dict[str, str]]:
-    """Experimental: Return only the latest user message, letting system prompt handle history."""
-    return [{"role": "user", "content": latest_user_text}]
+    """
+    Prepare a single user message that includes conversation history as tags.
+
+    Args:
+        latest_user_text: The new message content
+        transcript: Previous conversation history
+        message_type: "user" or "agent" to label the new message appropriately
+    """
+    if transcript.strip():
+        # Include history as tags before the new message
+        if message_type == "agent":
+            content = f"<conversation_history>\n{transcript}\n</conversation_history>\n\n<new_agent_message>\n{latest_user_text}\n</new_agent_message>"
+        else:
+            content = f"<conversation_history>\n{transcript}\n</conversation_history>\n\n<new_user_message>\n{latest_user_text}\n</new_user_message>"
+    else:
+        # No history, just wrap the new message
+        if message_type == "agent":
+            content = f"<new_agent_message>\n{latest_user_text}\n</new_agent_message>"
+        else:
+            content = f"<new_user_message>\n{latest_user_text}\n</new_user_message>"
+
+    return [{"role": "user", "content": content}]
 
 
-def build_system_prompt(transcript: str) -> str:
+def build_system_prompt() -> str:
     """Compose the system prompt used for the interaction agent."""
     sections = [SYSTEM_PROMPT]
-
-    if transcript.strip():
-        sections.extend(["<conversation_log>", transcript.strip(), "</conversation_log>"])
-
     sections.extend(["<active_agents>", _render_active_agents(), "</active_agents>"])
-
     return "\n\n".join(sections)
 
 
 def _render_active_agents() -> str:
     """Render active agents for the system prompt."""
     roster = get_agent_roster()
-    roster.refresh()
-    entries = roster.get_roster()
+    roster.load()  # Reload from disk to get latest agents
+    agents = roster.get_agents()
 
-    if not entries:
+    if not agents:
         return "None"
 
+    # Simple list of agent names
     rendered = []
-    for entry in entries:
-        name = escape(entry.name or "agent", quote=True)
-        if entry.recent_actions:
-            actions = "\n".join(
-                f"<recent_action>{escape(action, quote=False)}</recent_action>"
-                for action in entry.recent_actions
-            )
-            rendered.append(f'<agent name="{name}">\n{actions}\n</agent>')
-        else:
-            rendered.append(f'<agent name="{name}"></agent>')
+    for agent_name in agents:
+        name = escape(agent_name or "agent", quote=True)
+        rendered.append(f'<agent name="{name}"></agent>')
 
     return "\n".join(rendered)

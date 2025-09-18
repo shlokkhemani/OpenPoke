@@ -41,25 +41,78 @@
 - [x] Emit OpenRouter `tool_call` deltas from the client wrapper so interaction tools are surfaced without bespoke SSE parsing.
 - [ ] Cover edge cases (invalid names, empty instructions, file-write failures) with targeted tests.
 
-## Phase 7 · Execution Agent Runtime Wiring
-- [ ] Implement the execution-agent dispatcher that consumes instructions from `sendmessageto_agent`, runs the appropriate Gmail tool, and writes `<action performed>` entries with outcomes and errors.
-- [x] Update or replace existing Gmail service helpers to align with the new data flow (structured responses, error propagation);
-      now exposed via `execute_gmail_tool` and used by the execution-agent tool registry.
-- [x] Replace execution-agent tool definitions with Gmail Composio actions (create draft, send draft, forward, reply) to match the revised flow and append outcome summaries to the per-agent journal.
-- [ ] Provide hooks for future expansion (multiple toolkits, parallel agents) while keeping the current scope focused on Gmail.
+## Phase 7 · Execution Agent Runtime Implementation
+- [x] Update `send_message_to_agent` tool to accept human-readable agent names in the parameter description, supporting both new agent creation and reusing existing agents from the roster.
+- [x] Create `ExecutionAgent` class with: (a) system prompt template for instructions, (b) conversation history loading from logs (simplified to read directly from logs), (c) current request from interaction agent, (d) optional conversation limit parameter.
+- [x] Build execution agent LLM flow with two-step process:
+  - First LLM call: System prompt + agent history + current request → Decide which tools to execute
+  - Execute tools with retry mechanism (one retry on error, passing error message back to LLM with full context)
+  - Second LLM call: Analyze tool results → Generate response for interaction agent
+- [x] Implement `ExecutionAgentRuntime` class that manages individual agent executions:
+  - Builds system prompt with embedded history from logs
+  - Handles OpenRouter API calls with Gmail tool schemas
+  - Records all requests, actions, tool responses, and agent responses using XML-style tags
+  - Simplified to show complete conversation trail in each LLM call
+- [x] Create `AsyncRuntimeManager` to orchestrate parallel execution:
+  - Spawns async tasks for each `send_message_to_agent` call
+  - Tracks futures with unique request IDs
+  - Implements 60-second timeout with proper error handling
+  - Returns `ExecutionResult` containing agent name, success status, response message, and any errors
+- [x] Create `InteractionAgentRuntime` to mirror execution agent architecture:
+  - Moved all interaction logic from chat.py for symmetry
+  - Handles tool calls and execution agent coordination
+  - Makes second LLM call when execution agents are used
+- [x] Update interaction agent to handle execution agent invocations:
+  - Detects when tool calls include execution agents (0, 1, or multiple)
+  - Collects all execution results asynchronously
+  - Records execution agent messages as `<agent message>` tags (internal)
+  - Makes second LLM call to analyze execution results and craft final user response
+  - Records only final response as `<replies>` tag (shown to users)
+- [x] Remove API key and model parameters throughout codebase:
+  - All components now load from environment variables via get_settings()
+  - Cleaner initialization without parameter threading
+- [x] Restructure logging to use XML-style tags consistently:
+  - Execution agents: `<agent request>`, `<action>`, `<tool response>`, `<agent response>`
+  - Interaction agent: `<user message>`, `<agent message>`, `<replies>`
+- [x] Gmail tool integration already complete (`execution_agent/tools.py` has all 4 operations)
+- [x] Execution logging system with XML tags (`services/execution_log.py`)
+- [ ] **Draft Display & Confirmation Flow:**
+  - Execution agent must return full draft content (to, subject, body) not just draft ID
+  - Interaction agent must format and display draft clearly to user
+  - System must wait for user confirmation before calling `gmail_execute_draft`
+  - Never auto-send emails without explicit user approval
 
-## Phase 8 · Output & Display Logic
-- [ ] Define how the interaction agent emits regular assistant replies versus draft displays (`<display_draft>` blocks) in the synchronous response body.
-- [ ] Implement the path for `display_draft` messages: when the execution agent submits a draft, relay it to the user as a dedicated message after confirmation.
-- [ ] Validate the end-to-end flow with mocked completions to ensure transcripts, prompts, and outputs stay in sync.
+## Phase 8 · Message Ordering & Response Coordination
+- [ ] Implement simple message ordering:
+  - Assign sequential `message_id` to each incoming user message
+  - Block responses for message N+1 until message N completes
+  - Release responses in correct order
+- [ ] Update `/chat` endpoint to enforce ordering:
+  - Process messages sequentially (simple queue)
+  - When execution agents used: Wait for all results → Second LLM call → Final response
+  - When no execution agents: Direct response after first LLM call
+- [ ] **Draft Display Enhancement:**
+  - Add special formatting for email drafts in responses
+  - Preserve draft IDs in conversation context for follow-up actions
+  - Enable "send the draft" or "modify the draft" commands to work with context
 
-## Phase 9 · Documentation & Developer Experience
-- [ ] Rewrite developer docs to describe the new architecture: conversation logging, roster lifecycle, tool invocation, prompt composition strategy, and synchronous response contract.
-- [ ] Add targeted inline comments highlighting non-obvious synchronization or serialization choices.
-- [ ] Produce onboarding notes detailing how to reset state (clearing logs, roster) and how to inspect agent journals.
+## Phase 9 · Basic Error Handling
+- [ ] Handle execution agent failures gracefully:
+  - One retry for tool execution errors (pass error back to LLM)
+  - 60-second timeout for execution agents
+  - If all execution agents fail, interaction agent still provides response
+- [ ] Ensure partial success works:
+  - Some agents succeed, others fail → Interaction agent analyzes available results
+  - Include error information in final response
 
-## Phase 10 · Validation & Launch Readiness
-- [ ] Build automated tests covering log writing/reading, roster reconstruction, prompt assembly, and tool invocation paths.
-- [ ] Run manual end-to-end simulations (user ↔ interaction agent ↔ execution agent ↔ Gmail tool) verifying logs and outputs.
-- [ ] Prepare deployment checklist: ensure `data/conversation` and `data/execution_agents` directories exist with correct permissions, remove superseded history files, and update environment configs.
-- [ ] Schedule a post-launch review to capture observations and prioritize next-phase improvements (multi-user support, agent retirement policies, additional tooling).
+## Phase 10 · Manual Testing & Validation
+- [ ] Test core workflows manually:
+  - Create new agent with specific task
+  - Reuse existing agent from roster
+  - Multiple agents working on single request
+  - Message ordering (send two messages quickly, verify order)
+  - Agent with old history still functioning
+- [ ] Basic documentation:
+  - README with architecture overview
+  - How to run and test the system
+  - Known limitations

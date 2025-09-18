@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import status
@@ -11,6 +12,29 @@ from ..config import Settings
 from ..logging_config import logger
 from ..models import GmailConnectPayload, GmailFetchPayload, GmailStatusPayload
 from ..utils import error_response
+
+
+def _save_gmail_user_id(user_id: str) -> None:
+    """Save the Gmail user_id to a file for future use."""
+    try:
+        data_dir = Path("data")
+        data_dir.mkdir(exist_ok=True)
+        user_id_file = data_dir / "gmail_user_id.txt"
+        user_id_file.write_text(user_id)
+        logger.info(f"Saved Gmail user_id: {user_id}")
+    except Exception as e:
+        logger.error(f"Failed to save Gmail user_id: {e}")
+
+
+def _load_gmail_user_id() -> Optional[str]:
+    """Load the saved Gmail user_id."""
+    try:
+        user_id_file = Path("data") / "gmail_user_id.txt"
+        if user_id_file.exists():
+            return user_id_file.read_text().strip()
+    except Exception as e:
+        logger.error(f"Failed to load Gmail user_id: {e}")
+    return None
 
 
 def _gmail_import_client():
@@ -126,6 +150,11 @@ def fetch_status(payload: GmailStatusPayload) -> JSONResponse:
             normalized = (status_value or "").upper()
             connected = normalized in {"CONNECTED", "SUCCESS", "SUCCESSFUL", "ACTIVE", "COMPLETED"}
             email = _extract_email(account)
+
+            # Save user_id when Gmail is successfully connected
+            if connected and payload.user_id:
+                _save_gmail_user_id(payload.user_id)
+
         return JSONResponse(
             {
                 "ok": True,

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
@@ -15,7 +13,7 @@ async def chat_send(
     payload: ChatRequest,
     settings: Settings = Depends(get_settings),
 ) -> JSONResponse:
-    return handle_chat_request(payload, settings=settings)
+    return await handle_chat_request(payload, settings=settings)
 
 
 @router.get("/history", response_model=ChatHistoryResponse)
@@ -26,8 +24,20 @@ def chat_history() -> ChatHistoryResponse:
 
 @router.delete("/history", response_model=ChatHistoryClearResponse)
 def clear_history() -> ChatHistoryClearResponse:
+    from ..services import get_execution_agent_logs, get_agent_roster
+
+    # Clear conversation log
     log = get_conversation_log()
     log.clear()
+
+    # Clear execution agent logs
+    execution_logs = get_execution_agent_logs()
+    execution_logs.clear_all()
+
+    # Clear agent roster
+    roster = get_agent_roster()
+    roster.clear()
+
     return ChatHistoryClearResponse()
 
 

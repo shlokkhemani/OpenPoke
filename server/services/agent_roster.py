@@ -1,76 +1,88 @@
-"""Simplified agent roster management."""
+"""Simple agent roster management - just a list of agent names."""
 
 import json
-from dataclasses import dataclass
+import fcntl
+import time
 from pathlib import Path
-from typing import List
 
 from ..config import get_settings
 from ..logging_config import logger
-from .execution_log import get_execution_agent_logs
-
-
-@dataclass
-class AgentRosterEntry:
-    name: str
-    recent_actions: List[str]
 
 
 class AgentRoster:
-    """View of execution agents derived from log files."""
+    """Simple roster that stores agent names in a JSON file."""
 
     def __init__(self, roster_path: Path):
         self._roster_path = roster_path
-        self._log_store = get_execution_agent_logs()
-        self._entries: List[AgentRosterEntry] = []
-        self.refresh()
+        self._agents: list[str] = []
+        self.load()
 
-    def refresh(self) -> None:
-        """Refresh roster from disk or logs."""
+    def load(self) -> None:
+        """Load agent names from roster.json."""
         if self._roster_path.exists():
             try:
-                data = json.loads(self._roster_path.read_text(encoding="utf-8"))
-                if isinstance(data, list):
-                    self._entries = [
-                        AgentRosterEntry(
-                            name=str(item.get("name", "")),
-                            recent_actions=list(item.get("recent_actions", []))
-                        )
-                        for item in data
-                        if isinstance(item, dict)
-                    ]
-                    return
+                with open(self._roster_path, 'r') as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        self._agents = [str(name) for name in data]
+                    logger.info(f"Loaded {len(self._agents)} agents from roster")
             except Exception as exc:
-                logger.warning("failed to load roster.json", extra={"error": str(exc)})
+                logger.warning(f"Failed to load roster.json: {exc}")
+                self._agents = []
+        else:
+            self._agents = []
+            self.save()
 
-        self._entries = self._build_from_logs()
-        self.persist()
+    def save(self) -> None:
+        """Save agent names to roster.json with file locking."""
+        max_retries = 5
+        retry_delay = 0.1
 
-    def _build_from_logs(self, limit: int = 5) -> List[AgentRosterEntry]:
-        """Build roster from log files."""
-        return [
-            AgentRosterEntry(
-                name=agent,
-                recent_actions=[
-                    f"{item['timestamp']} · {item['tag']}: {item['message']}"
-                    for item in self._log_store.load_recent(agent, limit=limit)
-                ]
-            )
-            for agent in self._log_store.list_agents()
-        ]
+        for attempt in range(max_retries):
+            try:
+                self._roster_path.parent.mkdir(parents=True, exist_ok=True)
 
-    def persist(self) -> None:
-        """Save roster to disk."""
+                # Open file and acquire exclusive lock
+                with open(self._roster_path, 'w') as f:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    try:
+                        json.dump(self._agents, f, indent=2)
+                        logger.info(f"Saved {len(self._agents)} agents to roster")
+                        return
+                    finally:
+                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+            except BlockingIOError:
+                # Lock is held by another process
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    logger.warning("Failed to acquire lock on roster.json after retries")
+            except Exception as exc:
+                logger.warning(f"Failed to save roster.json: {exc}")
+                break
+
+    def add_agent(self, agent_name: str) -> None:
+        """Add an agent to the roster if not already present."""
+        if agent_name not in self._agents:
+            self._agents.append(agent_name)
+            self.save()
+            logger.info(f"Added agent '{agent_name}' to roster")
+
+    def get_agents(self) -> list[str]:
+        """Get list of all agent names."""
+        return list(self._agents)
+
+    def clear(self) -> None:
+        """Clear the agent roster."""
+        self._agents = []
         try:
-            self._roster_path.parent.mkdir(parents=True, exist_ok=True)
-            payload = [{"name": e.name, "recent_actions": e.recent_actions} for e in self._entries]
-            self._roster_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            if self._roster_path.exists():
+                self._roster_path.unlink()
+            logger.info("Cleared agent roster")
         except Exception as exc:
-            logger.warning("failed to persist roster.json", extra={"error": str(exc)})
-
-    def get_roster(self) -> List[AgentRosterEntry]:
-        """Get current roster entries."""
-        return list(self._entries)
+            logger.warning(f"Failed to clear roster.json: {exc}")
 
 
 _settings = get_settings()

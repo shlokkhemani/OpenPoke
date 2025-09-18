@@ -3,8 +3,20 @@
 from .agent import (
     build_system_prompt,
     prepare_openrouter_messages,
-    prepare_openrouter_messages_experimental
+    prepare_message_with_history
 )
+from .runtime import InteractionAgentRuntime, InteractionResult
 from .tools import get_tool_schemas, handle_tool_call
 
 MAX_OPENROUTER_MESSAGES = 12
+
+__all__ = [
+    "InteractionAgentRuntime",
+    "InteractionResult",
+    "build_system_prompt",
+    "prepare_openrouter_messages",
+    "prepare_message_with_history",
+    "get_tool_schemas",
+    "handle_tool_call",
+    "MAX_OPENROUTER_MESSAGES",
+]

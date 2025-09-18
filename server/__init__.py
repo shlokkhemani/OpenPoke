@@ -1,8 +1,3 @@
-"""OpenPoke Python server package.
-
-Exports the FastAPI application as `app`.
-"""
+"""OpenPoke Python server package."""
 
 from .app import app
-
-__all__ = ["app"]

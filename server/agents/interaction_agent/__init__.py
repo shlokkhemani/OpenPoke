@@ -1,9 +1,10 @@
-"""Interaction agent assets."""
+"""Interaction agent module."""
 
-from .tools import get_tool_schemas as get_interaction_tool_schemas, get_tool_registry as get_interaction_tool_registry
+from .agent import (
+    build_system_prompt,
+    prepare_openrouter_messages,
+    prepare_openrouter_messages_experimental
+)
+from .tools import get_tool_schemas, handle_tool_call
 
-__all__ = [
-    "get_interaction_tool_schemas",
-    "get_interaction_tool_registry",
-]
-
+MAX_OPENROUTER_MESSAGES = 12

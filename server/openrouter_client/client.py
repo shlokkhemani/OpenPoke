@@ -113,6 +113,22 @@ def stream_chat_completion(
                 text = delta.get("content")
                 if isinstance(text, str) and text:
                     yield {"type": "content", "text": text}
+
+                tool_calls = delta.get("tool_calls")
+                if isinstance(tool_calls, list):
+                    for tc in tool_calls:
+                        name = tc.get("function", {}).get("name")
+                        arguments = tc.get("function", {}).get("arguments")
+                        if not name:
+                            continue
+                        yield {
+                            "type": "tool_call",
+                            "name": name,
+                            "arguments": arguments,
+                            "id": tc.get("id"),
+                            "index": tc.get("index"),
+                        }
+
                 finish_reason = choice.get("finish_reason")
                 if finish_reason:
                     yield {"type": "event", "event": "finish", "reason": finish_reason}
@@ -120,6 +136,3 @@ def stream_chat_completion(
         _handle_response_error(exc)
     except httpx.HTTPError as exc:
         raise OpenRouterError(f"OpenRouter request failed: {exc}") from exc
-
-
-__all__ = ["OpenRouterError", "stream_chat_completion", "OpenRouterBaseURL"]

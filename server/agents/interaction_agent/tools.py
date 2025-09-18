@@ -1,39 +1,25 @@
+"""Tool definitions for interaction agent."""
+
+import json
 from typing import Any, Callable, Dict, List, Optional
 
-# OpenAI/OpenRouter-compatible tool schema list.
+from ...logging_config import logger
+from ...services.execution_log import get_execution_agent_logs
+
+# Tool schemas for OpenRouter
 TOOL_SCHEMAS: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "search_kb",
-            "description": "Search a knowledge base for short factual snippets.",
+            "name": "send_message_to_agent",
+            "description": "Deliver instructions to a specific execution agent.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Search query"},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 10, "default": 3},
+                    "agent_name": {"type": "string", "description": "Agent identifier (e.g., 'gmail')."},
+                    "instructions": {"type": "string", "description": "Instructions for the agent."},
                 },
-                "required": ["query"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "route_to_execution",
-            "description": "Request that the Execution Agent handle a task (returns a routing token).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "task": {"type": "string", "description": "Task summary to execute"},
-                    "priority": {
-                        "type": "string",
-                        "enum": ["low", "normal", "high"],
-                        "default": "normal",
-                    },
-                },
-                "required": ["task"],
+                "required": ["agent_name", "instructions"],
                 "additionalProperties": False,
             },
         },
@@ -41,36 +27,22 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
 ]
 
 
-def _impl_search_kb(query: str, limit: int = 3) -> Dict[str, Any]:
-    """Placeholder KB search. Replace with real search integration.
-
-    Returns a deterministic mock result to keep server logic simple.
-    """
-    items = [
-        {"title": f"Result {i+1}", "snippet": f"Snippet for '{query}' #{i+1}", "score": 0.5 - i * 0.1}
-        for i in range(max(0, min(int(limit), 10)))
-    ]
-    return {"query": query, "results": items}
+def send_message_to_agent(agent_name: str, instructions: str) -> str:
+    """Send instructions to an execution agent."""
+    log_store = get_execution_agent_logs()
+    log_store.record_request(agent_name, instructions)
+    logger.info(f"queued for agent: {agent_name}")
+    return f"Queued instructions for agent '{agent_name}'."
 
 
-def _impl_route_to_execution(task: str, priority: str = "normal") -> Dict[str, str]:
-    """Return a mock routing token and echoed task.
-
-    An orchestrator can consume this token to spawn the Execution Agent.
-    """
-    token = f"exec::{priority}::{abs(hash(task)) % (10**8):08d}"
-    return {"route": token, "task": task, "priority": priority}
-
-
-# Registry mapping tool names to Python callables.
+# Registry mapping tool names to Python callables
 TOOL_REGISTRY: Dict[str, Callable[..., Any]] = {
-    "search_kb": _impl_search_kb,
-    "route_to_execution": _impl_route_to_execution,
+    "send_message_to_agent": send_message_to_agent,
 }
 
 
 def get_tool_schemas() -> List[Dict[str, Any]]:
-    """Return OpenAI-compatible tool schemas for the interaction agent."""
+    """Return OpenAI-compatible tool schemas."""
     return TOOL_SCHEMAS
 
 
@@ -78,3 +50,29 @@ def get_tool_registry() -> Dict[str, Callable[..., Any]]:
     """Return Python callables for executing tools by name."""
     return TOOL_REGISTRY
 
+
+def handle_tool_call(name: str, arguments: Any) -> Optional[str]:
+    """Handle tool calls from interaction agent."""
+    tool_func = TOOL_REGISTRY.get(name)
+    if not tool_func:
+        logger.warning(f"unexpected tool: {name}")
+        return None
+
+    try:
+        # Parse arguments if string
+        if isinstance(arguments, str):
+            args = json.loads(arguments) if arguments.strip() else {}
+        elif isinstance(arguments, dict):
+            args = arguments
+        else:
+            return "Invalid arguments format"
+
+        # Execute tool
+        return tool_func(**args)
+    except json.JSONDecodeError:
+        return "Invalid JSON"
+    except TypeError as e:
+        return f"Missing required arguments: {e}"
+    except Exception as e:
+        logger.error(f"tool call failed: {e}")
+        return "Failed to execute"

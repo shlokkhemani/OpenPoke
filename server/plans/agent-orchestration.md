@@ -33,9 +33,9 @@
 - [x] Validate baseline web app flow (message send/receive + history) without tool calls, confirming persistence aligns with new log format.
 
 ## Phase 6 · `sendmessageto_agent` Tool Implementation
-- [ ] Define the tool schema with `agent_name` and `instructions` parameters and register it with the interaction agent.
-- [ ] Implement the handler to create or update execution-agent state, append `<request>` entries, and dispatch instructions to the execution runtime.
-- [ ] Return a structured acknowledgement including identifiers needed for downstream tracking.
+- [x] Define the tool schema with `agent_name` and `instructions` parameters and register it with the interaction agent.
+- [x] Implement the handler to create or update execution-agent state, append `<request>` entries, and dispatch instructions to the execution runtime.
+- [x] Return a structured acknowledgement including identifiers needed for downstream tracking.
 - [ ] Cover edge cases (invalid names, empty instructions, file-write failures) with targeted tests.
 
 ## Phase 7 · Execution Agent Runtime Wiring

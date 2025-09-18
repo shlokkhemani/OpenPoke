@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 
@@ -21,7 +21,7 @@ def _headers(*, api_key: Optional[str] = None) -> Dict[str, str]:
     headers = {
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
-        "Accept": "text/event-stream",
+        "Accept": "application/json",
     }
 
     referer = os.getenv("OPENROUTER_HTTP_REFERER")
@@ -51,7 +51,7 @@ def _handle_response_error(exc: httpx.HTTPStatusError) -> None:
     raise OpenRouterError(f"OpenRouter request failed ({response.status_code}): {detail}") from exc
 
 
-def stream_chat_completion(
+def request_chat_completion(
     *,
     model: str,
     messages: List[Dict[str, str]],
@@ -61,13 +61,13 @@ def stream_chat_completion(
     api_key: Optional[str] = None,
     tools: Optional[List[Dict[str, Any]]] = None,
     base_url: str = OpenRouterBaseURL,
-) -> Iterator[Dict[str, str]]:
-    """Stream chat completions as simple content/event deltas."""
+) -> Dict[str, Any]:
+    """Request a chat completion and return the raw JSON payload."""
 
     payload: Dict[str, object] = {
         "model": model,
         "messages": _build_messages(messages, system),
-        "stream": True,
+        "stream": False,
     }
     if temperature is not None:
         payload["temperature"] = float(temperature)
@@ -79,60 +79,23 @@ def stream_chat_completion(
     url = f"{base_url.rstrip('/')}/chat/completions"
 
     try:
-        with httpx.stream(
-            "POST",
+        response = httpx.post(
             url,
             headers=_headers(api_key=api_key),
             json=payload,
             timeout=None,
-        ) as response:
-            try:
-                response.raise_for_status()
-            except httpx.HTTPStatusError as exc:
-                _handle_response_error(exc)
-
-            for line in response.iter_lines():
-                if not line:
-                    continue
-                if line.startswith(":"):
-                    continue
-                if not line.startswith("data:"):
-                    continue
-                data = line[5:].strip()
-                if not data:
-                    continue
-                if data == "[DONE]":
-                    yield {"type": "event", "event": "done"}
-                    break
-                try:
-                    chunk = json.loads(data)
-                except json.JSONDecodeError:
-                    continue
-                choice = (chunk.get("choices") or [{}])[0]
-                delta = choice.get("delta") or {}
-                text = delta.get("content")
-                if isinstance(text, str) and text:
-                    yield {"type": "content", "text": text}
-
-                tool_calls = delta.get("tool_calls")
-                if isinstance(tool_calls, list):
-                    for tc in tool_calls:
-                        name = tc.get("function", {}).get("name")
-                        arguments = tc.get("function", {}).get("arguments")
-                        if not name:
-                            continue
-                        yield {
-                            "type": "tool_call",
-                            "name": name,
-                            "arguments": arguments,
-                            "id": tc.get("id"),
-                            "index": tc.get("index"),
-                        }
-
-                finish_reason = choice.get("finish_reason")
-                if finish_reason:
-                    yield {"type": "event", "event": "finish", "reason": finish_reason}
-    except httpx.HTTPStatusError as exc:
+        )
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            _handle_response_error(exc)
+        return response.json()
+    except httpx.HTTPStatusError as exc:  # pragma: no cover - handled above
         _handle_response_error(exc)
     except httpx.HTTPError as exc:
         raise OpenRouterError(f"OpenRouter request failed: {exc}") from exc
+
+    raise OpenRouterError("OpenRouter request failed: unknown error")
+
+
+__all__ = ["OpenRouterError", "request_chat_completion", "OpenRouterBaseURL"]

@@ -5,7 +5,6 @@ from typing import Optional
 from fastapi import status
 from fastapi.responses import JSONResponse, PlainTextResponse
 
-from ..config import Settings
 from ..agents.interaction_agent import (
     build_system_prompt,
     get_tool_schemas,
@@ -13,9 +12,10 @@ from ..agents.interaction_agent import (
     prepare_openrouter_messages,
     prepare_openrouter_messages_experimental,
 )
+from ..config import Settings
 from ..logging_config import logger
 from ..models import ChatMessage, ChatRequest
-from ..openrouter_client import OpenRouterError, stream_chat_completion
+from ..openrouter_client import OpenRouterError, request_chat_completion
 from ..utils import error_response
 from .conversation_log import get_conversation_log
 
@@ -62,11 +62,8 @@ def handle_chat_request(payload: ChatRequest, *, settings: Settings) -> PlainTex
         },
     )
 
-    assistant_chunks: list[str] = []
-    tool_responses: list[str] = []
-
     try:
-        deltas = stream_chat_completion(
+        completion = request_chat_completion(
             model=model_name,
             messages=openrouter_messages,
             system=system_prompt,
@@ -75,23 +72,28 @@ def handle_chat_request(payload: ChatRequest, *, settings: Settings) -> PlainTex
             max_tokens=payload.max_tokens,
             tools=get_tool_schemas(),
         )
-
-        for delta in deltas:
-            delta_type = delta.get("type")
-            if delta_type == "content":
-                text = str(delta.get("text") or "")
-                if text:
-                    assistant_chunks.append(text)
-            elif delta_type == "tool_call":
-                name = str(delta.get("name") or "").strip()
-                acknowledgement = handle_tool_call(name, delta.get("arguments"))
-                if acknowledgement:
-                    tool_responses.append(acknowledgement)
-            else:
-                continue
     except OpenRouterError as exc:
         logger.warning("openrouter error", extra={"error": str(exc)})
         return error_response(str(exc), status_code=status.HTTP_502_BAD_GATEWAY)
+
+    assistant_chunks: list[str] = []
+    tool_responses: list[str] = []
+
+    choice = (completion.get("choices") or [{}])[0]
+    message = choice.get("message") or {}
+
+    content = message.get("content")
+    if isinstance(content, str) and content.strip():
+        assistant_chunks.append(content)
+
+    tool_calls = message.get("tool_calls") or []
+    if isinstance(tool_calls, list):
+        for tool_call in tool_calls:
+            name = str(tool_call.get("function", {}).get("name") or "").strip()
+            arguments = tool_call.get("function", {}).get("arguments")
+            acknowledgement = handle_tool_call(name, arguments)
+            if acknowledgement:
+                tool_responses.append(acknowledgement)
 
     if tool_responses:
         assistant_chunks.append("\n".join(tool_responses))

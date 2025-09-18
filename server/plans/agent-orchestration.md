@@ -15,7 +15,7 @@
 ## Phase 3 · Execution-Agent Journal Persistence
 - [x] Establish `data/execution_agents/` as the home for per-agent logs; implement deterministic filename sanitization (e.g., `slugify(name) + .log`).
 - [x] Provide lightweight append helpers that record `<request>` and `<action performed>` entries with ISO timestamps.
-- [ ] Create loaders that rebuild the last 10 actions per agent on startup to seed the roster immediately.
+- [x] Load recent actions for each agent during startup so the roster seeds itself directly from the journals.
 - [x] Ensure writes are serialized with per-agent locks so multiple requests cannot interleave writes.
 
 ## Phase 4 · Active-Agent Roster Management
@@ -26,8 +26,10 @@
 
 ## Phase 5 · Interaction Agent Message Flow
 - [x] Rebuild the `/chat` pipeline to use blocking OpenRouter completions, removing streaming-related code (`StreamingResponse`, `sse_iter`, etc.).
+- [x] Simplify the OpenRouter client to use standard JSON responses, eliminating SSE delta handling entirely.
 - [x] Return plain-text assistant responses (instead of `{ ok, message }` JSON) so the UI can render content directly while maintaining error JSON for failures.
 - [x] Ensure the OpenRouter payload retains the user message array while injecting the composed system prompt and `sendmessageto_agent` tool schema only.
+- [x] Introduce dedicated `agents/interaction_agent` helpers for prompt composition, history trimming, and tool dispatch to keep FastAPI surface minimal.
 - [x] Implement transcript truncation safeguards only if absolutely required by token limits, otherwise rely on the append-only log as-is.
 - [x] Update logging/telemetry to reflect synchronous request handling.
 - [x] Validate baseline web app flow (message send/receive + history) without tool calls, confirming persistence aligns with new log format.
@@ -36,6 +38,7 @@
 - [x] Define the tool schema with `agent_name` and `instructions` parameters and register it with the interaction agent.
 - [x] Implement the handler to create or update execution-agent state, append `<request>` entries, and dispatch instructions to the execution runtime.
 - [x] Return a structured acknowledgement including identifiers needed for downstream tracking.
+- [x] Emit OpenRouter `tool_call` deltas from the client wrapper so interaction tools are surfaced without bespoke SSE parsing.
 - [ ] Cover edge cases (invalid names, empty instructions, file-write failures) with targeted tests.
 
 ## Phase 7 · Execution Agent Runtime Wiring

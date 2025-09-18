@@ -1,5 +1,6 @@
 """Simplified Execution Agent Runtime."""
 
+import asyncio
 import json
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
@@ -7,7 +8,7 @@ from dataclasses import dataclass
 from .agent import ExecutionAgent
 from .tools import get_tool_schemas, get_tool_registry
 from ...config import get_settings
-from ...openrouter_client import request_chat_completion, OpenRouterError
+from ...openrouter_client import request_chat_completion
 from ...logging_config import logger
 
 
@@ -23,6 +24,8 @@ class ExecutionResult:
 
 class ExecutionAgentRuntime:
     """Manages the execution of a single agent request."""
+
+    MAX_TOOL_ITERATIONS = 8
 
     def __init__(self, agent_name: str):
         settings = get_settings()
@@ -42,102 +45,107 @@ class ExecutionAgentRuntime:
             system_prompt = self.agent.build_system_prompt_with_history()
 
             # Start conversation with the instruction
-            messages = [
-                {"role": "user", "content": instructions}
-            ]
+            messages = [{"role": "user", "content": instructions}]
+            tools_executed: List[str] = []
+            final_response: Optional[str] = None
 
-            # First LLM call: What tools should I use?
-            logger.info(f"Execution agent {self.agent.name}: Deciding on tools")
-            response = self._make_llm_call(system_prompt, messages, with_tools=True)
+            for iteration in range(self.MAX_TOOL_ITERATIONS):
+                logger.info(
+                    f"Execution agent {self.agent.name}: requesting plan (iteration {iteration + 1})"
+                )
+                response = self._make_llm_call(system_prompt, messages, with_tools=True)
+                assistant_message = response.get("choices", [{}])[0].get("message", {})
 
-            # Add the assistant's response to messages
-            assistant_message = response.get("choices", [{}])[0].get("message", {})
-            messages.append({"role": "assistant", "content": assistant_message.get("content", "") or "I'll execute the following tools."})
+                if not assistant_message:
+                    raise RuntimeError("LLM response did not include an assistant message")
 
-            # Extract and execute tools
-            tool_calls = self._extract_tool_calls(response)
-            tools_executed = []
+                raw_tool_calls = assistant_message.get("tool_calls", []) or []
+                parsed_tool_calls = self._extract_tool_calls(raw_tool_calls)
 
-            if tool_calls:
-                # Build execution report
-                execution_report = "Tool Execution Results:\n\n"
+                assistant_entry: Dict[str, Any] = {
+                    "role": "assistant",
+                    "content": assistant_message.get("content", "") or "",
+                }
+                if raw_tool_calls:
+                    assistant_entry["tool_calls"] = raw_tool_calls
+                messages.append(assistant_entry)
 
-                for tool_call in tool_calls:
+                if not parsed_tool_calls:
+                    final_response = assistant_entry["content"] or "No action required."
+                    break
+
+                for tool_call in parsed_tool_calls:
                     tool_name = tool_call.get("name", "")
                     tool_args = tool_call.get("arguments", {})
+                    call_id = tool_call.get("id")
+
+                    if not tool_name:
+                        logger.warning("Tool call missing name: %s", tool_call)
+                        failure = {"error": "Tool call missing name; unable to execute."}
+                        tool_message = {
+                            "role": "tool",
+                            "tool_call_id": call_id or "unknown_tool",
+                            "content": self._format_tool_result(
+                                tool_name or "<unknown>", False, failure, tool_args
+                            ),
+                        }
+                        messages.append(tool_message)
+                        continue
+
                     tools_executed.append(tool_name)
+                    logger.info(f"Executing tool {tool_name}")
 
-                    logger.info(f"Executing {tool_name}")
-
-                    # Try to execute
                     success, result = self._execute_tool(tool_name, tool_args)
 
-                    if not success and "error" in result:
-                        # Log the error details
-                        logger.warning(f"Tool {tool_name} failed: {result.get('error', 'Unknown error')}")
-                        logger.debug(f"Failed with args: {json.dumps(tool_args, indent=2)}")
-
-                        # Retry once with LLM help
-                        logger.info(f"Retrying {tool_name} after error")
-                        success, result = self._retry_tool(
-                            tool_name,
-                            tool_args,
-                            result["error"],
-                            system_prompt,
-                            messages
-                        )
-
-                        if success:
-                            logger.info(f"Retry successful for {tool_name}")
-                        else:
-                            logger.error(f"Retry failed for {tool_name}: {result.get('error', 'Unknown error')}")
-
-                    # Add to execution report
                     if success:
-                        execution_report += f"✓ {tool_name}: Success\n"
-                        execution_report += f"  Result: {json.dumps(result, indent=2)[:500]}\n\n"
+                        logger.info(f"Tool {tool_name} completed successfully")
+                        record_payload = self._safe_json_dump(result)
                     else:
-                        execution_report += f"✗ {tool_name}: Failed\n"
-                        execution_report += f"  Error: {result.get('error', 'Unknown error')}\n\n"
+                        error_detail = result.get("error") if isinstance(result, dict) else str(result)
+                        logger.warning(f"Tool {tool_name} failed: {error_detail}")
+                        logger.debug(f"Failed with args: {json.dumps(tool_args, indent=2)}")
+                        record_payload = error_detail
 
-                    # Record in log
                     self.agent.record_tool_execution(
                         tool_name,
-                        json.dumps(tool_args),
-                        json.dumps(result) if success else str(result.get('error', ''))
+                        self._safe_json_dump(tool_args),
+                        record_payload
                     )
 
-                # Add execution report to messages
-                messages.append({"role": "user", "content": execution_report + "\nBased on these results, provide a summary of what was accomplished."})
-
-                # Second LLM call: Analyze and summarize
-                logger.info(f"Execution agent {self.agent.name}: Analyzing results")
-                final_response = self._make_llm_call(system_prompt, messages, with_tools=False)
-                response_text = final_response.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    tool_message = {
+                        "role": "tool",
+                        "tool_call_id": call_id or tool_name,
+                        "content": self._format_tool_result(tool_name, success, result, tool_args),
+                    }
+                    messages.append(tool_message)
 
             else:
-                # No tools needed, use initial response
-                response_text = assistant_message.get("content", "No action required.")
+                raise RuntimeError("Reached tool iteration limit without final response")
 
-            # Record final response
-            self.agent.record_response(response_text)
+            if final_response is None:
+                raise RuntimeError("LLM did not return a final response")
+
+            self.agent.record_response(final_response)
+            self._notify_interaction_agent(True, final_response)
 
             return ExecutionResult(
                 agent_name=self.agent.name,
                 success=True,
-                response=response_text,
-                tools_executed=tools_executed or []
+                response=final_response,
+                tools_executed=tools_executed
             )
 
         except Exception as e:
             logger.error(f"Execution agent {self.agent.name} failed: {e}")
             error_msg = str(e)
+            failure_text = f"Failed to complete task: {error_msg}"
             self.agent.record_response(f"Error: {error_msg}")
+            self._notify_interaction_agent(False, failure_text)
 
             return ExecutionResult(
                 agent_name=self.agent.name,
                 success=False,
-                response=f"Failed to complete task: {error_msg}",
+                response=failure_text,
                 error=error_msg
             )
 
@@ -154,18 +162,15 @@ class ExecutionAgentRuntime:
             temperature=0.7
         )
 
-    def _extract_tool_calls(self, response: Dict) -> List[Dict]:
-        """Extract tool calls from LLM response."""
-        tool_calls = []
-        message = response.get("choices", [{}])[0].get("message", {})
-        raw_tools = message.get("tool_calls", [])
+    def _extract_tool_calls(self, raw_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Extract tool calls from an assistant message."""
+        tool_calls: List[Dict[str, Any]] = []
 
         for tool in raw_tools:
             function = tool.get("function", {})
             name = function.get("name", "")
             args = function.get("arguments", "")
 
-            # Parse arguments if string
             if isinstance(args, str):
                 try:
                     args = json.loads(args) if args else {}
@@ -173,9 +178,61 @@ class ExecutionAgentRuntime:
                     args = {}
 
             if name:
-                tool_calls.append({"name": name, "arguments": args})
+                tool_calls.append({
+                    "id": tool.get("id"),
+                    "name": name,
+                    "arguments": args,
+                })
 
         return tool_calls
+
+    def _safe_json_dump(self, payload: Any) -> str:
+        """Serialize payload to JSON, falling back to string representation."""
+        try:
+            return json.dumps(payload, default=str)
+        except TypeError:
+            return str(payload)
+
+    def _format_tool_result(
+        self,
+        tool_name: str,
+        success: bool,
+        result: Any,
+        arguments: Dict[str, Any],
+    ) -> str:
+        """Build a structured string for tool responses."""
+        if success:
+            payload: Dict[str, Any] = {
+                "tool": tool_name,
+                "status": "success",
+                "arguments": arguments,
+                "result": result,
+            }
+        else:
+            error_detail = result.get("error") if isinstance(result, dict) else str(result)
+            payload = {
+                "tool": tool_name,
+                "status": "error",
+                "arguments": arguments,
+                "error": error_detail,
+            }
+        return self._safe_json_dump(payload)
+
+    def _notify_interaction_agent(self, success: bool, response_text: str) -> None:
+        """Send execution results to the interaction agent."""
+        status = "SUCCESS" if success else "FAILED"
+        agent_message = f"[{status}] {self.agent.name}: {response_text}"
+
+        from ..interaction_agent.runtime import InteractionAgentRuntime
+
+        runtime = InteractionAgentRuntime()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(runtime.handle_agent_message(agent_message))
+            return
+
+        loop.create_task(runtime.handle_agent_message(agent_message))
 
     def _execute_tool(self, tool_name: str, arguments: Dict) -> Tuple[bool, Any]:
         """Execute a tool. Returns (success, result)."""
@@ -188,37 +245,3 @@ class ExecutionAgentRuntime:
             return True, result
         except Exception as e:
             return False, {"error": str(e)}
-
-    def _retry_tool(
-        self,
-        tool_name: str,
-        original_args: Dict,
-        error: str,
-        system_prompt: str,
-        conversation: List[Dict]
-    ) -> Tuple[bool, Any]:
-        """Retry a failed tool with LLM assistance."""
-        # Build retry context
-        retry_messages = conversation + [
-            {
-                "role": "user",
-                "content": f"The tool {tool_name} failed with error: {error}\n"
-                          f"Original arguments: {json.dumps(original_args)}\n"
-                          f"Please provide corrected arguments for {tool_name}."
-            }
-        ]
-
-        try:
-            # Ask LLM for corrected call
-            response = self._make_llm_call(system_prompt, retry_messages, with_tools=True)
-            retry_calls = self._extract_tool_calls(response)
-
-            # Find the retry for our tool
-            for call in retry_calls:
-                if call.get("name") == tool_name:
-                    return self._execute_tool(tool_name, call.get("arguments", {}))
-
-            return False, {"error": f"LLM did not provide corrected {tool_name} call"}
-
-        except Exception as e:
-            return False, {"error": f"Retry failed: {str(e)}"}

@@ -108,9 +108,6 @@ class ConversationLog:
     def record_reply(self, content: str) -> None:
         self._append("replies", content)
 
-    def record_draft(self, content: str) -> None:
-        self._append("draft", content)
-
     def to_chat_messages(self) -> List[ChatMessage]:
         messages: List[ChatMessage] = []
         for tag, payload in self.iter_entries():
@@ -118,8 +115,6 @@ class ConversationLog:
                 messages.append(ChatMessage(role="user", content=payload))
             elif tag == "replies":
                 messages.append(ChatMessage(role="assistant", content=payload))
-            elif tag == "draft":
-                messages.append(ChatMessage(role="draft", content=payload))
         return messages
 
     def clear(self) -> None:

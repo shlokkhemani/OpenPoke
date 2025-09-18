@@ -1,13 +1,13 @@
 """Tool definitions for interaction agent."""
 
 import json
-import uuid
 from typing import Any, Dict, List, Optional
 
 from ...logging_config import logger
 from ...services.agent_roster import get_agent_roster
 from ...services.conversation_log import get_conversation_log
 from ...services.execution_log import get_execution_agent_logs
+from ..execution_agent.runtime import ExecutionAgentRuntime
 
 # Tool schemas for OpenRouter
 TOOL_SCHEMAS = [
@@ -58,31 +58,31 @@ TOOL_SCHEMAS = [
     },
 ]
 
-# Track pending execution requests
-_pending_executions = {}
-
-
 def send_message_to_agent(agent_name: str, instructions: str) -> str:
     """Send instructions to an execution agent."""
-    request_id = str(uuid.uuid4())
-
     roster = get_agent_roster()
     roster.load()
     existing_agents = set(roster.get_agents())
     is_new = agent_name not in existing_agents
 
+    if is_new:
+        roster.add_agent(agent_name)
+
     get_execution_agent_logs().record_request(agent_name, instructions)
 
-    _pending_executions[request_id] = {
-        "agent_name": agent_name,
-        "instructions": instructions,
-        "is_new": is_new
-    }
+    action = "Created" if is_new else "Updated"
+    logger.info(f"{action} agent: {agent_name}")
 
-    action = "Creating new" if is_new else "Reusing existing"
-    logger.info(f"{action} agent: {agent_name} (request_id: {request_id})")
+    try:
+        runtime = ExecutionAgentRuntime(agent_name=agent_name)
+        runtime.execute(instructions)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.error(
+            "execution agent launch failed",
+            extra={"agent": agent_name, "error": str(exc)}
+        )
 
-    return f"{action} agent '{agent_name}'. Request ID: {request_id}"
+    return ""
 
 
 def send_draft(
@@ -94,18 +94,9 @@ def send_draft(
 
     log = get_conversation_log()
 
-    lines = [
-        "<draft>",
-        f"To: {to}",
-        f"Subject: {subject}",
-        "",
-        body,
-        "</draft>",
-    ]
+    message = f"To: {to}\nSubject: {subject}\n\n{body}"
 
-    message = "\n".join(lines)
-
-    log.record_draft(message)
+    log.record_reply(message)
     logger.info(
         "recorded draft",
         extra={

@@ -8,7 +8,7 @@ from ..services import get_conversation_log, handle_chat_request
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
-@router.post("/stream", response_class=JSONResponse, summary="Submit a chat message and receive a completion")
+@router.post("/send", response_class=JSONResponse, summary="Submit a chat message and receive a completion")
 async def chat_send(
     payload: ChatRequest,
     settings: Settings = Depends(get_settings),

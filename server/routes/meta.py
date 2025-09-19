@@ -8,7 +8,7 @@ from ..models import HealthResponse, RootResponse
 router = APIRouter(tags=["meta"])
 
 PUBLIC_ENDPOINTS = [
-    "/api/v1/chat/stream",
+    "/api/v1/chat/send",
     "/api/v1/chat/history",
     "/api/v1/integrations/composio/gmail/connect",
     "/api/v1/integrations/composio/gmail/status",

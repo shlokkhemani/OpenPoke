@@ -52,10 +52,10 @@ class InteractionAgentRuntime:
             # NOW record the user message for future history
             self.conversation_log.record_user_message(user_message)
 
-            # Build system prompt (no history, just personality + active agents)
+            # Build system prompt (static instructions only)
             system_prompt = build_system_prompt()
 
-            # Prepare messages with history included as tags, current message separate
+            # Prepare message that contains history, roster, and the latest user turn
             messages = prepare_message_with_history(user_message, transcript_before, message_type="user")
 
             logger.info("Processing user message through interaction agent")

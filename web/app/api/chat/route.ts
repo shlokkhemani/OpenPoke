@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   }
 
   const serverBase = process.env.PY_SERVER_URL || 'http://localhost:8001';
-  const serverPath = process.env.PY_CHAT_PATH || '/api/v1/chat/stream';
+  const serverPath = process.env.PY_CHAT_PATH || '/api/v1/chat/send';
   const urlBase = `${serverBase.replace(/\/$/, '')}${serverPath}`;
 
   const configuredMethod = (process.env.PY_SERVER_METHOD || 'POST').toUpperCase();

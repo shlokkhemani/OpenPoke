@@ -25,7 +25,6 @@ class AgentRoster:
                     data = json.load(f)
                     if isinstance(data, list):
                         self._agents = [str(name) for name in data]
-                    logger.info(f"Loaded {len(self._agents)} agents from roster")
             except Exception as exc:
                 logger.warning(f"Failed to load roster.json: {exc}")
                 self._agents = []
@@ -47,7 +46,6 @@ class AgentRoster:
                     fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                     try:
                         json.dump(self._agents, f, indent=2)
-                        logger.info(f"Saved {len(self._agents)} agents to roster")
                         return
                     finally:
                         fcntl.flock(f.fileno(), fcntl.LOCK_UN)
@@ -68,7 +66,6 @@ class AgentRoster:
         if agent_name not in self._agents:
             self._agents.append(agent_name)
             self.save()
-            logger.info(f"Added agent '{agent_name}' to roster")
 
     def get_agents(self) -> list[str]:
         """Get list of all agent names."""

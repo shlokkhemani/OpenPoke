@@ -50,7 +50,7 @@ class ExecutionAgentRuntime:
 
             for iteration in range(self.MAX_TOOL_ITERATIONS):
                 logger.info(
-                    f"Execution agent {self.agent.name}: requesting plan (iteration {iteration + 1})"
+                    f"[{self.agent.name}] Requesting plan (iteration {iteration + 1})"
                 )
                 response = await self._make_llm_call(system_prompt, messages, with_tools=True)
                 assistant_message = response.get("choices", [{}])[0].get("message", {})
@@ -92,17 +92,16 @@ class ExecutionAgentRuntime:
                         continue
 
                     tools_executed.append(tool_name)
-                    logger.info(f"Executing tool {tool_name}")
+                    logger.info(f"[{self.agent.name}] Executing tool: {tool_name}")
 
                     success, result = self._execute_tool(tool_name, tool_args)
 
                     if success:
-                        logger.info(f"Tool {tool_name} completed successfully")
+                        logger.info(f"[{self.agent.name}] Tool {tool_name} completed successfully")
                         record_payload = self._safe_json_dump(result)
                     else:
                         error_detail = result.get("error") if isinstance(result, dict) else str(result)
-                        logger.warning(f"Tool {tool_name} failed: {error_detail}")
-                        logger.debug(f"Failed with args: {json.dumps(tool_args, indent=2)}")
+                        logger.warning(f"[{self.agent.name}] Tool {tool_name} failed: {error_detail}")
                         record_payload = error_detail
 
                     self.agent.record_tool_execution(
@@ -134,7 +133,7 @@ class ExecutionAgentRuntime:
             )
 
         except Exception as e:
-            logger.error(f"Execution agent {self.agent.name} failed: {e}")
+            logger.error(f"[{self.agent.name}] Execution failed: {e}")
             error_msg = str(e)
             failure_text = f"Failed to complete task: {error_msg}"
             self.agent.record_response(f"Error: {error_msg}")
@@ -149,7 +148,7 @@ class ExecutionAgentRuntime:
     async def _make_llm_call(self, system_prompt: str, messages: List[Dict], with_tools: bool) -> Dict:
         """Make an LLM call."""
         tools_to_send = self.tool_schemas if with_tools else None
-        logger.info(f"Execution agent calling with model: {self.model}, tools: {len(tools_to_send) if tools_to_send else 0}")
+        logger.info(f"[{self.agent.name}] Calling LLM with model: {self.model}, tools: {len(tools_to_send) if tools_to_send else 0}")
         return await request_chat_completion(
             model=self.model,
             messages=messages,

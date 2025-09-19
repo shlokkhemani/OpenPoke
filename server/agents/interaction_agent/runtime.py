@@ -110,7 +110,7 @@ class InteractionAgentRuntime:
                 agent_message, transcript_before, message_type="agent"
             )
 
-            logger.info("Processing execution-agent message through interaction agent")
+            logger.info("Processing execution agent results")
             summary = await self._run_interaction_loop(system_prompt, messages)
 
             final_response = self._finalize_response(summary)
@@ -377,14 +377,12 @@ class InteractionAgentRuntime:
         if detail:
             log_payload.update(detail)
 
-        message = f"interaction_tool_call[{tool_call.name}] stage={stage}"
-
         if stage == "done":
-            logger.info(message, extra=log_payload)
+            logger.info(f"Tool '{tool_call.name}' completed")
         elif stage in {"error", "rejected"}:
-            logger.warning(message, extra=log_payload)
+            logger.warning(f"Tool '{tool_call.name}' {stage}")
         else:
-            logger.debug(message, extra=log_payload)
+            logger.debug(f"Tool '{tool_call.name}' {stage}")
 
     def _finalize_response(self, summary: _LoopSummary) -> str:
         """Decide what text should be exposed to the user as the final reply."""

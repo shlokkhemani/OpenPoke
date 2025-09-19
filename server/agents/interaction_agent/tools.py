@@ -121,21 +121,16 @@ def send_message_to_agent(agent_name: str, instructions: str) -> ToolResult:
 
     get_execution_agent_logs().record_request(agent_name, instructions)
 
-    action = "Created" if is_new else "Updated"
+    action = "Created" if is_new else "Reused"
     logger.info(f"{action} agent: {agent_name}")
 
     async def _execute_async() -> None:
         try:
             result = await _EXECUTION_BATCH_MANAGER.execute_agent(agent_name, instructions)
-            logger.info(
-                "execution agent completed",
-                extra={"agent": agent_name, "success": result.success},
-            )
+            status = "SUCCESS" if result.success else "FAILED"
+            logger.info(f"Agent '{agent_name}' completed: {status}")
         except Exception as exc:  # pragma: no cover - defensive
-            logger.error(
-                "execution agent failed",
-                extra={"agent": agent_name, "error": str(exc)},
-            )
+            logger.error(f"Agent '{agent_name}' failed: {str(exc)}")
 
     try:
         loop = asyncio.get_running_loop()
@@ -181,13 +176,7 @@ def send_draft(
     message = f"To: {to}\nSubject: {subject}\n\n{body}"
 
     log.record_reply(message)
-    logger.info(
-        "recorded draft",
-        extra={
-            "recipient": to,
-            "subject": subject,
-        },
-    )
+    logger.info(f"Draft recorded for: {to}")
 
     return ToolResult(
         success=True,
@@ -209,10 +198,6 @@ def wait(reason: str) -> ToolResult:
     wait_message = f"<wait>{reason}</wait>"
     log.record_reply(wait_message)
     
-    logger.info(
-        "recorded wait",
-        extra={"reason": reason},
-    )
 
     return ToolResult(
         success=True,

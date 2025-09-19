@@ -1,10 +1,11 @@
 """Interaction Agent Runtime - handles LLM calls for user and agent turns."""
 
-from typing import Dict, Any, List, Optional, Set
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Set
 
 from .agent import build_system_prompt, prepare_message_with_history
-from .tools import get_tool_schemas, handle_tool_call
+from .tools import ToolResult, get_tool_schemas, handle_tool_call
 from ...config import get_settings
 from ...services.conversation_log import get_conversation_log
 from ...openrouter_client import request_chat_completion
@@ -14,17 +15,38 @@ from ...logging_config import logger
 @dataclass
 class InteractionResult:
     """Result from the interaction agent."""
+
     success: bool
     response: str
     error: Optional[str] = None
     execution_agents_used: int = 0
 
 
+@dataclass
+class _ToolCall:
+    """Parsed tool invocation from an LLM response."""
+
+    identifier: Optional[str]
+    name: str
+    arguments: Dict[str, Any]
+
+
+@dataclass
+class _LoopSummary:
+    """Aggregate information produced by the interaction loop."""
+
+    last_assistant_text: str = ""
+    user_messages: List[str] = field(default_factory=list)
+    tool_names: List[str] = field(default_factory=list)
+    execution_agents: Set[str] = field(default_factory=set)
+
+
 class InteractionAgentRuntime:
     """Manages the interaction agent's request processing."""
 
-    def __init__(self):
-        """Initialize the interaction agent runtime."""
+    MAX_TOOL_ITERATIONS = 8
+
+    def __init__(self) -> None:
         settings = get_settings()
         self.api_key = settings.openrouter_api_key
         self.model = settings.default_model or "openrouter/auto"
@@ -32,159 +54,342 @@ class InteractionAgentRuntime:
         self.tool_schemas = get_tool_schemas()
 
         if not self.api_key:
-            raise ValueError("OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.")
-
-    async def execute(self, user_message: str) -> InteractionResult:
-        """
-        Execute the interaction agent with a user message.
-
-        Args:
-            user_message: The user's message
-
-        Returns:
-            InteractionResult with the agent's response
-        """
-        try:
-            # Load conversation transcript BEFORE recording the new message
-            # This way we only get the history, not the current message
-            transcript_before = self.conversation_log.load_transcript()
-
-            # NOW record the user message for future history
-            self.conversation_log.record_user_message(user_message)
-
-            # Build system prompt (static instructions only)
-            system_prompt = build_system_prompt()
-
-            # Prepare message that contains history, roster, and the latest user turn
-            messages = prepare_message_with_history(user_message, transcript_before, message_type="user")
-
-            logger.info("Processing user message through interaction agent")
-
-            allowed_tool_names: Set[str] = {"send_message_to_agent"}
-            response = await self._make_llm_call(
-                system_prompt=system_prompt,
-                messages=messages,
-                tool_schemas=self._tool_subset(allowed_tool_names)
+            raise ValueError(
+                "OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable."
             )
 
-            assistant_response, tool_used = self._process_model_response(response, allowed_tool_names)
+    async def execute(self, user_message: str) -> InteractionResult:
+        """Handle a user-authored message."""
 
-            final_response = ""
-            if not tool_used:
-                raw_reply = assistant_response.strip()
-                if raw_reply:
-                    self.conversation_log.record_reply(raw_reply)
-                    final_response = raw_reply
+        try:
+            transcript_before = self.conversation_log.load_transcript()
+            self.conversation_log.record_user_message(user_message)
+
+            system_prompt = build_system_prompt()
+            messages = prepare_message_with_history(
+                user_message, transcript_before, message_type="user"
+            )
+
+            logger.info("Processing user message through interaction agent")
+            summary = await self._run_interaction_loop(system_prompt, messages)
+
+            final_response = self._finalize_response(summary)
+
+            if final_response and not summary.user_messages:
+                self.conversation_log.record_reply(final_response)
 
             return InteractionResult(
                 success=True,
                 response=final_response,
+                execution_agents_used=len(summary.execution_agents),
             )
 
-        except Exception as e:
-            logger.error(f"Interaction agent failed: {e}")
-            error_msg = str(e)
-
-            # Still try to record the error
+        except Exception as exc:
+            logger.error("Interaction agent failed", extra={"error": str(exc)})
+            error_msg = str(exc)
             try:
                 self.conversation_log.record_reply(f"Error: {error_msg}")
-            except:
+            except Exception:  # pragma: no cover - defensive
                 pass
 
             return InteractionResult(
                 success=False,
                 response=f"I encountered an error: {error_msg}",
-                error=error_msg
+                error=error_msg,
             )
 
-    async def handle_agent_message(
+    async def handle_agent_message(self, agent_message: str) -> InteractionResult:
+        """Process a status update emitted by an execution agent."""
+
+        try:
+            transcript_before = self.conversation_log.load_transcript()
+            self.conversation_log.record_agent_message(agent_message)
+
+            system_prompt = build_system_prompt()
+            messages = prepare_message_with_history(
+                agent_message, transcript_before, message_type="agent"
+            )
+
+            logger.info("Processing execution-agent message through interaction agent")
+            summary = await self._run_interaction_loop(system_prompt, messages)
+
+            final_response = self._finalize_response(summary)
+
+            if final_response and not summary.user_messages:
+                self.conversation_log.record_reply(final_response)
+
+            return InteractionResult(
+                success=True,
+                response=final_response,
+                execution_agents_used=len(summary.execution_agents),
+            )
+
+        except Exception as exc:
+            logger.error("Interaction agent (agent message) failed", extra={"error": str(exc)})
+            error_msg = str(exc)
+            try:
+                self.conversation_log.record_reply(f"Error: {error_msg}")
+            except Exception:  # pragma: no cover - defensive
+                pass
+
+            return InteractionResult(
+                success=False,
+                response=f"I encountered an error: {error_msg}",
+                error=error_msg,
+            )
+
+    async def _run_interaction_loop(
         self,
-        agent_message: str,
-    ) -> InteractionResult:
-        """Process a message reported by an execution agent."""
-        transcript_before = self.conversation_log.load_transcript()
-        self.conversation_log.record_agent_message(agent_message)
+        system_prompt: str,
+        messages: List[Dict[str, Any]],
+    ) -> _LoopSummary:
+        """Iteratively query the LLM until it issues a final response."""
 
-        system_prompt = build_system_prompt()
-        messages = prepare_message_with_history(agent_message, transcript_before, message_type="agent")
+        summary = _LoopSummary()
 
-        allowed_tool_names: Set[str] = {"send_draft"}
-        response = await self._make_llm_call(
-            system_prompt=system_prompt,
-            messages=messages,
-            tool_schemas=self._tool_subset(allowed_tool_names)
-        )
+        for iteration in range(self.MAX_TOOL_ITERATIONS):
+            response = await self._make_llm_call(system_prompt, messages)
+            assistant_message = self._extract_assistant_message(response)
 
-        assistant_response, _ = self._process_model_response(response, allowed_tool_names)
+            assistant_content = (assistant_message.get("content") or "").strip()
+            if assistant_content:
+                summary.last_assistant_text = assistant_content
 
-        raw_reply = assistant_response.strip()
-        final_response = raw_reply
+            raw_tool_calls = assistant_message.get("tool_calls") or []
+            parsed_tool_calls = self._parse_tool_calls(raw_tool_calls)
 
-        if raw_reply:
-            self.conversation_log.record_reply(raw_reply)
+            assistant_entry: Dict[str, Any] = {
+                "role": "assistant",
+                "content": assistant_message.get("content", "") or "",
+            }
+            if raw_tool_calls:
+                assistant_entry["tool_calls"] = raw_tool_calls
+            messages.append(assistant_entry)
 
-        return InteractionResult(success=True, response=final_response)
+            if not parsed_tool_calls:
+                break
+
+            for tool_call in parsed_tool_calls:
+                summary.tool_names.append(tool_call.name)
+
+                if tool_call.name == "send_message_to_agent":
+                    agent_name = tool_call.arguments.get("agent_name")
+                    if isinstance(agent_name, str) and agent_name:
+                        summary.execution_agents.add(agent_name)
+
+                result = self._execute_tool(tool_call)
+
+                if result.user_message:
+                    summary.user_messages.append(result.user_message)
+
+                tool_message = {
+                    "role": "tool",
+                    "tool_call_id": tool_call.identifier or tool_call.name,
+                    "content": self._format_tool_result(tool_call, result),
+                }
+                messages.append(tool_message)
+        else:
+            raise RuntimeError("Reached tool iteration limit without final response")
+
+        if not summary.user_messages and not summary.last_assistant_text:
+            logger.warning("Interaction loop exited without assistant content")
+
+        return summary
 
     async def _make_llm_call(
         self,
         system_prompt: str,
-        messages: List[Dict[str, str]],
-        tool_schemas: Optional[List[Dict[str, Any]]]
+        messages: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
         """Make an LLM call via OpenRouter."""
+
+        logger.debug(
+            "Interaction agent calling LLM",
+            extra={"model": self.model, "tools": len(self.tool_schemas)},
+        )
         return request_chat_completion(
             model=self.model,
             messages=messages,
             system=system_prompt,
             api_key=self.api_key,
-            tools=tool_schemas
+            tools=self.tool_schemas,
         )
 
-    def _process_model_response(
-        self,
-        response: Dict[str, Any],
-        allowed_tool_names: Set[str]
-    ) -> tuple[str, bool]:
-        """Extract assistant text and execute allowed tool calls."""
+    def _extract_assistant_message(self, response: Dict[str, Any]) -> Dict[str, Any]:
+        """Return the assistant message from the raw response payload."""
+
         choice = (response.get("choices") or [{}])[0]
-        message = choice.get("message") or {}
+        message = choice.get("message")
+        if not isinstance(message, dict):
+            raise RuntimeError("LLM response did not include an assistant message")
+        return message
 
-        content = message.get("content")
-        assistant_text = content if isinstance(content, str) else ""
+    def _parse_tool_calls(self, raw_tool_calls: List[Dict[str, Any]]) -> List[_ToolCall]:
+        """Normalize tool call payloads from the LLM."""
 
-        tool_used = False
-        tool_calls = message.get("tool_calls") or []
-        if isinstance(tool_calls, list):
-            for tool_call in tool_calls:
-                name = str(tool_call.get("function", {}).get("name") or "").strip()
-                arguments = tool_call.get("function", {}).get("arguments")
-
-                if not name:
-                    continue
-
-                if name not in allowed_tool_names:
-                    logger.warning(
-                        "Ignoring disallowed tool call from interaction agent",
-                        extra={"tool": name}
-                    )
-                    continue
-
-                tool_used = True
-                try:
-                    handle_tool_call(name, arguments)
-                except Exception as exc:  # pragma: no cover - defensive
-                    logger.error("Tool call failed", extra={"tool": name, "error": str(exc)})
-
-        return assistant_text, tool_used
-
-    def _tool_subset(self, allowed_names: Set[str]) -> Optional[List[Dict[str, Any]]]:
-        """Return schemas matching allowed tool names."""
-        schemas = []
-        for schema in self.tool_schemas:
-            function_block = schema.get("function")
-            if not function_block:
+        parsed: List[_ToolCall] = []
+        for raw in raw_tool_calls:
+            function_block = raw.get("function") or {}
+            name = function_block.get("name")
+            if not isinstance(name, str) or not name:
+                logger.warning("Skipping tool call without name", extra={"tool": raw})
                 continue
 
-            if function_block.get("name") in allowed_names:
-                schemas.append(schema)
-        return schemas or None
+            arguments, error = self._parse_tool_arguments(function_block.get("arguments"))
+            if error:
+                logger.warning("Tool call arguments invalid", extra={"tool": name, "error": error})
+                parsed.append(
+                    _ToolCall(
+                        identifier=raw.get("id"),
+                        name=name,
+                        arguments={"__invalid_arguments__": error},
+                    )
+                )
+                continue
+
+            parsed.append(
+                _ToolCall(identifier=raw.get("id"), name=name, arguments=arguments)
+            )
+
+        return parsed
+
+    def _parse_tool_arguments(
+        self, raw_arguments: Any
+    ) -> tuple[Dict[str, Any], Optional[str]]:
+        """Convert tool arguments into a dictionary, reporting errors."""
+
+        if raw_arguments is None:
+            return {}, None
+
+        if isinstance(raw_arguments, dict):
+            return raw_arguments, None
+
+        if isinstance(raw_arguments, str):
+            if not raw_arguments.strip():
+                return {}, None
+            try:
+                parsed = json.loads(raw_arguments)
+            except json.JSONDecodeError as exc:
+                return {}, f"invalid json: {exc}"
+            if isinstance(parsed, dict):
+                return parsed, None
+            return {}, "decoded arguments were not an object"
+
+        return {}, f"unsupported argument type: {type(raw_arguments).__name__}"
+
+    def _execute_tool(self, tool_call: _ToolCall) -> ToolResult:
+        """Execute a tool call and convert low-level errors into structured results."""
+
+        if "__invalid_arguments__" in tool_call.arguments:
+            error = tool_call.arguments["__invalid_arguments__"]
+            self._log_tool_invocation(tool_call, stage="rejected", detail={"error": error})
+            return ToolResult(success=False, payload={"error": error})
+
+        try:
+            self._log_tool_invocation(tool_call, stage="start")
+            result = handle_tool_call(tool_call.name, tool_call.arguments)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error(
+                "Tool execution crashed",
+                extra={"tool": tool_call.name, "error": str(exc)},
+            )
+            self._log_tool_invocation(
+                tool_call,
+                stage="error",
+                detail={"error": str(exc)},
+            )
+            return ToolResult(success=False, payload={"error": str(exc)})
+
+        if not isinstance(result, ToolResult):
+            logger.warning(
+                "Tool did not return ToolResult; coercing",
+                extra={"tool": tool_call.name},
+            )
+            wrapped = ToolResult(success=True, payload=result)
+            self._log_tool_invocation(tool_call, stage="done", result=wrapped)
+            return wrapped
+
+        status = "success" if result.success else "error"
+        logger.debug(
+            "Tool executed",
+            extra={
+                "tool": tool_call.name,
+                "status": status,
+            },
+        )
+        self._log_tool_invocation(tool_call, stage="done", result=result)
+        return result
+
+    def _format_tool_result(self, tool_call: _ToolCall, result: ToolResult) -> str:
+        """Render a tool execution result back to the LLM."""
+
+        payload: Dict[str, Any] = {
+            "tool": tool_call.name,
+            "status": "success" if result.success else "error",
+            "arguments": {
+                key: value
+                for key, value in tool_call.arguments.items()
+                if key != "__invalid_arguments__"
+            },
+        }
+
+        if result.payload is not None:
+            key = "result" if result.success else "error"
+            payload[key] = result.payload
+
+        return self._safe_json_dump(payload)
+
+    def _safe_json_dump(self, payload: Any) -> str:
+        """Serialize payload to JSON, falling back to repr on failure."""
+
+        try:
+            return json.dumps(payload, default=str)
+        except TypeError:
+            return repr(payload)
+
+    def _log_tool_invocation(
+        self,
+        tool_call: _ToolCall,
+        *,
+        stage: str,
+        result: Optional[ToolResult] = None,
+        detail: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Emit structured logs for tool lifecycle events."""
+
+        cleaned_args = {
+            key: value
+            for key, value in tool_call.arguments.items()
+            if key != "__invalid_arguments__"
+        }
+
+        log_payload: Dict[str, Any] = {
+            "tool": tool_call.name,
+            "stage": stage,
+            "arguments": cleaned_args,
+        }
+
+        if result is not None:
+            log_payload["success"] = result.success
+            if result.payload is not None:
+                log_payload["payload"] = result.payload
+
+        if detail:
+            log_payload.update(detail)
+
+        message = f"interaction_tool_call[{tool_call.name}] stage={stage}"
+
+        if stage == "done":
+            logger.info(message, extra=log_payload)
+        elif stage in {"error", "rejected"}:
+            logger.warning(message, extra=log_payload)
+        else:
+            logger.debug(message, extra=log_payload)
+
+    def _finalize_response(self, summary: _LoopSummary) -> str:
+        """Decide what text should be exposed to the user as the final reply."""
+
+        if summary.user_messages:
+            return summary.user_messages[-1]
+
+        return summary.last_assistant_text

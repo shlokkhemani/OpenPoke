@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 export type Settings = {
   apiKey: string;
@@ -8,8 +8,6 @@ export type Settings = {
 
 export function useSettings() {
   const [settings, setSettings] = useState<Settings>({ apiKey: '', model: 'openrouter/auto' });
-  const settingsRef = useRef(settings);
-  settingsRef.current = settings;
 
   useEffect(() => {
     try {
@@ -19,15 +17,15 @@ export function useSettings() {
     } catch {}
   }, []);
 
-  const persist = (s: Settings) => {
+  const persist = useCallback((s: Settings) => {
     setSettings(s);
     try {
       localStorage.setItem('openrouter_api_key', s.apiKey);
       localStorage.setItem('openrouter_model', s.model);
     } catch {}
-  };
+  }, []);
 
-  return { settings, setSettings: persist, settingsRef } as const;
+  return { settings, setSettings: persist } as const;
 }
 
 export default function SettingsModal({

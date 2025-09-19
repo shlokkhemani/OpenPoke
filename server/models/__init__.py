@@ -1,6 +1,6 @@
 from .chat import ChatHistoryClearResponse, ChatHistoryResponse, ChatMessage, ChatRequest
 from .gmail import GmailConnectPayload, GmailFetchPayload, GmailStatusPayload
-from .meta import HealthResponse, RootResponse
+from .meta import HealthResponse, RootResponse, SetTimezoneRequest, SetTimezoneResponse
 
 __all__ = [
     "ChatMessage",
@@ -12,4 +12,6 @@ __all__ = [
     "GmailStatusPayload",
     "HealthResponse",
     "RootResponse",
+    "SetTimezoneRequest",
+    "SetTimezoneResponse",
 ]

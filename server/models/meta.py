@@ -16,3 +16,12 @@ class RootResponse(BaseModel):
     service: str
     version: str
     endpoints: List[str]
+
+
+class SetTimezoneRequest(BaseModel):
+    timezone: str
+
+
+class SetTimezoneResponse(BaseModel):
+    ok: bool = True
+    timezone: str

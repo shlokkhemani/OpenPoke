@@ -12,6 +12,14 @@ type ChatBubble = {
 
 const POLL_INTERVAL_MS = 1500;
 
+const formatEscapeCharacters = (text: string): string => {
+  return text
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\r/g, '\r')
+    .replace(/\\\\/g, '\\');
+};
+
 const isRenderableMessage = (entry: any) =>
   typeof entry?.role === 'string' &&
   typeof entry?.content === 'string' &&
@@ -25,7 +33,7 @@ const toBubbles = (payload: any): ChatBubble[] => {
     .map((message: any, index: number) => ({
       id: `history-${index}`,
       role: message.role,
-      text: message.content,
+      text: formatEscapeCharacters(message.content),
     }));
 };
 
@@ -106,7 +114,7 @@ export default function Page() {
       const userMessage: ChatBubble = {
         id: `user-${Date.now()}`,
         role: 'user',
-        text: trimmed,
+        text: formatEscapeCharacters(trimmed),
       };
       setMessages(prev => {
         const newMessages = [...prev, userMessage];
@@ -249,7 +257,7 @@ export default function Page() {
                       isDraft && 'whitespace-pre-wrap',
                     )}
                   >
-                    <span className={isDraft ? 'block whitespace-pre-wrap' : undefined}>{message.text}</span>
+                    <span className={isDraft ? 'block whitespace-pre-wrap' : 'whitespace-pre-wrap'}>{message.text}</span>
                   </div>
                 </div>
               );

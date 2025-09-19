@@ -24,3 +24,4 @@ __pycache__/
 server/data/conversation/*.log
 server/data/execution_agents/*.log
 server/data/execution_agents/roster.json
+server/venv/

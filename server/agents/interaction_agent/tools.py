@@ -9,7 +9,7 @@ from ...logging_config import logger
 from ...services.agent_roster import get_agent_roster
 from ...services.conversation_log import get_conversation_log
 from ...services.execution_log import get_execution_agent_logs
-from ..execution_agent.async_manager import AsyncRuntimeManager
+from ..execution_agent.batch_manager import ExecutionBatchManager
 
 
 @dataclass
@@ -106,7 +106,7 @@ TOOL_SCHEMAS = [
     },
 ]
 
-_ASYNC_RUNTIME_MANAGER = AsyncRuntimeManager()
+_EXECUTION_BATCH_MANAGER = ExecutionBatchManager()
 
 
 def send_message_to_agent(agent_name: str, instructions: str) -> ToolResult:
@@ -126,7 +126,7 @@ def send_message_to_agent(agent_name: str, instructions: str) -> ToolResult:
 
     async def _execute_async() -> None:
         try:
-            result = await _ASYNC_RUNTIME_MANAGER.execute_agent(agent_name, instructions)
+            result = await _EXECUTION_BATCH_MANAGER.execute_agent(agent_name, instructions)
             logger.info(
                 "execution agent completed",
                 extra={"agent": agent_name, "success": result.success},

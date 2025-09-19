@@ -86,16 +86,10 @@ class InteractionAgentRuntime:
 
         except Exception as exc:
             logger.error("Interaction agent failed", extra={"error": str(exc)})
-            error_msg = str(exc)
-            try:
-                self.conversation_log.record_reply(f"Error: {error_msg}")
-            except Exception:  # pragma: no cover - defensive
-                pass
-
             return InteractionResult(
                 success=False,
-                response=f"I encountered an error: {error_msg}",
-                error=error_msg,
+                response="",
+                error=str(exc),
             )
 
     async def handle_agent_message(self, agent_message: str) -> InteractionResult:
@@ -126,16 +120,10 @@ class InteractionAgentRuntime:
 
         except Exception as exc:
             logger.error("Interaction agent (agent message) failed", extra={"error": str(exc)})
-            error_msg = str(exc)
-            try:
-                self.conversation_log.record_reply(f"Error: {error_msg}")
-            except Exception:  # pragma: no cover - defensive
-                pass
-
             return InteractionResult(
                 success=False,
-                response=f"I encountered an error: {error_msg}",
-                error=error_msg,
+                response="",
+                error=str(exc),
             )
 
     async def _run_interaction_loop(

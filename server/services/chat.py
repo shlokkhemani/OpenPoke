@@ -1,3 +1,4 @@
+import asyncio
 from typing import Optional
 
 from fastapi import status
@@ -31,14 +32,17 @@ async def handle_chat_request(payload: ChatRequest, *, settings: Settings) -> Pl
 
     try:
         runtime = InteractionAgentRuntime()
-        result = await runtime.execute(user_message=user_content)
-
-        return PlainTextResponse(result.response) if result.success else error_response(result.response, status_code=status.HTTP_502_BAD_GATEWAY)
-
     except ValueError as ve:
         # Missing API key error
         logger.error("configuration error", extra={"error": str(ve)})
         return error_response(str(ve), status_code=status.HTTP_400_BAD_REQUEST)
-    except Exception as exc:
-        logger.error("chat request failed", extra={"error": str(exc)})
-        return error_response(str(exc), status_code=status.HTTP_502_BAD_GATEWAY)
+
+    async def _run_interaction() -> None:
+        try:
+            await runtime.execute(user_message=user_content)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error("chat task failed", extra={"error": str(exc)})
+
+    asyncio.create_task(_run_interaction())
+
+    return PlainTextResponse("", status_code=status.HTTP_202_ACCEPTED)

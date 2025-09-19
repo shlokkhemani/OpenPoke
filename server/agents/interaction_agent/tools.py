@@ -1,6 +1,7 @@
 """Tool definitions for interaction agent."""
 
 import json
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from ...logging_config import logger
@@ -8,6 +9,16 @@ from ...services.agent_roster import get_agent_roster
 from ...services.conversation_log import get_conversation_log
 from ...services.execution_log import get_execution_agent_logs
 from ..execution_agent.runtime import ExecutionAgentRuntime
+
+
+@dataclass
+class ToolResult:
+    """Standardized payload returned by interaction-agent tools."""
+
+    success: bool
+    payload: Any = None
+    user_message: Optional[str] = None
+    recorded_reply: bool = False
 
 # Tool schemas for OpenRouter
 TOOL_SCHEMAS = [
@@ -26,6 +37,24 @@ TOOL_SCHEMAS = [
                     "instructions": {"type": "string", "description": "Instructions for the agent to execute."},
                 },
                 "required": ["agent_name", "instructions"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_message_to_user",
+            "description": "Deliver a natural-language response directly to the user. Use this for updates, confirmations, or any assistant response the user should see immediately.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Plain-text message that will be shown to the user and recorded in the conversation log.",
+                    },
+                },
+                "required": ["message"],
                 "additionalProperties": False,
             },
         },
@@ -58,7 +87,7 @@ TOOL_SCHEMAS = [
     },
 ]
 
-def send_message_to_agent(agent_name: str, instructions: str) -> str:
+def send_message_to_agent(agent_name: str, instructions: str) -> ToolResult:
     """Send instructions to an execution agent."""
     roster = get_agent_roster()
     roster.load()
@@ -81,15 +110,37 @@ def send_message_to_agent(agent_name: str, instructions: str) -> str:
             "execution agent launch failed",
             extra={"agent": agent_name, "error": str(exc)}
         )
+        return ToolResult(success=False, payload={"error": str(exc)})
 
-    return ""
+    return ToolResult(
+        success=True,
+        payload={
+            "status": "submitted",
+            "agent_name": agent_name,
+            "new_agent_created": is_new,
+        },
+    )
+
+
+def send_message_to_user(message: str) -> ToolResult:
+    """Record a user-visible reply in the conversation log."""
+
+    log = get_conversation_log()
+    log.record_reply(message)
+
+    return ToolResult(
+        success=True,
+        payload={"status": "delivered"},
+        user_message=message,
+        recorded_reply=True,
+    )
 
 
 def send_draft(
     to: str,
     subject: str,
     body: str,
-) -> None:
+) -> ToolResult:
     """Record a draft update in the conversation log for the interaction agent."""
 
     log = get_conversation_log()
@@ -105,13 +156,23 @@ def send_draft(
         },
     )
 
+    return ToolResult(
+        success=True,
+        payload={
+            "status": "draft_recorded",
+            "to": to,
+            "subject": subject,
+        },
+        recorded_reply=True,
+    )
+
 
 def get_tool_schemas():
     """Return OpenAI-compatible tool schemas."""
     return TOOL_SCHEMAS
 
 
-def handle_tool_call(name: str, arguments: Any) -> Optional[str]:
+def handle_tool_call(name: str, arguments: Any) -> ToolResult:
     """Handle tool calls from interaction agent."""
     try:
         if isinstance(arguments, str):
@@ -119,19 +180,21 @@ def handle_tool_call(name: str, arguments: Any) -> Optional[str]:
         elif isinstance(arguments, dict):
             args = arguments
         else:
-            return "Invalid arguments format"
+            return ToolResult(success=False, payload={"error": "Invalid arguments format"})
 
         if name == "send_message_to_agent":
             return send_message_to_agent(**args)
+        if name == "send_message_to_user":
+            return send_message_to_user(**args)
         if name == "send_draft":
             return send_draft(**args)
 
         logger.warning("unexpected tool", extra={"tool": name})
-        return None
+        return ToolResult(success=False, payload={"error": f"Unknown tool: {name}"})
     except json.JSONDecodeError:
-        return "Invalid JSON"
+        return ToolResult(success=False, payload={"error": "Invalid JSON"})
     except TypeError as exc:
-        return f"Missing required arguments: {exc}"
+        return ToolResult(success=False, payload={"error": f"Missing required arguments: {exc}"})
     except Exception as exc:  # pragma: no cover - defensive
         logger.error("tool call failed", extra={"tool": name, "error": str(exc)})
-        return "Failed to execute"
+        return ToolResult(success=False, payload={"error": "Failed to execute"})

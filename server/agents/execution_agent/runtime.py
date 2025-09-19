@@ -1,6 +1,5 @@
 """Simplified Execution Agent Runtime."""
 
-import asyncio
 import json
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
@@ -126,7 +125,6 @@ class ExecutionAgentRuntime:
                 raise RuntimeError("LLM did not return a final response")
 
             self.agent.record_response(final_response)
-            self._notify_interaction_agent(True, final_response)
 
             return ExecutionResult(
                 agent_name=self.agent.name,
@@ -140,7 +138,6 @@ class ExecutionAgentRuntime:
             error_msg = str(e)
             failure_text = f"Failed to complete task: {error_msg}"
             self.agent.record_response(f"Error: {error_msg}")
-            self._notify_interaction_agent(False, failure_text)
 
             return ExecutionResult(
                 agent_name=self.agent.name,
@@ -216,22 +213,6 @@ class ExecutionAgentRuntime:
                 "error": error_detail,
             }
         return self._safe_json_dump(payload)
-
-    def _notify_interaction_agent(self, success: bool, response_text: str) -> None:
-        """Send execution results to the interaction agent."""
-        status = "SUCCESS" if success else "FAILED"
-        agent_message = f"[{status}] {self.agent.name}: {response_text}"
-
-        from ..interaction_agent.runtime import InteractionAgentRuntime
-
-        runtime = InteractionAgentRuntime()
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            asyncio.run(runtime.handle_agent_message(agent_message))
-            return
-
-        loop.create_task(runtime.handle_agent_message(agent_message))
 
     def _execute_tool(self, tool_name: str, arguments: Dict) -> Tuple[bool, Any]:
         """Execute a tool. Returns (success, result)."""

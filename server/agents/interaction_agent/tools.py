@@ -106,6 +106,9 @@ TOOL_SCHEMAS = [
     },
 ]
 
+_ASYNC_RUNTIME_MANAGER = AsyncRuntimeManager()
+
+
 def send_message_to_agent(agent_name: str, instructions: str) -> ToolResult:
     """Send instructions to an execution agent."""
     roster = get_agent_roster()
@@ -121,36 +124,26 @@ def send_message_to_agent(agent_name: str, instructions: str) -> ToolResult:
     action = "Created" if is_new else "Updated"
     logger.info(f"{action} agent: {agent_name}")
 
-    # Execute asynchronously using the async manager
-    try:
-        async_manager = AsyncRuntimeManager()
-        
-        # Create a fire-and-forget task for the execution
-        async def _execute_async():
-            try:
-                result = await async_manager.execute_agent(agent_name, instructions)
-                logger.info(f"Agent {agent_name} execution completed: {result.success}")
-            except Exception as exc:
-                logger.error(
-                    "execution agent failed",
-                    extra={"agent": agent_name, "error": str(exc)}
-                )
-        
-        # Schedule the async execution
+    async def _execute_async() -> None:
         try:
-            loop = asyncio.get_event_loop()
-            loop.create_task(_execute_async())
-        except RuntimeError:
-            # No event loop, this shouldn't happen in the interaction agent context
-            logger.error("No event loop available for async execution")
-            return ToolResult(success=False, payload={"error": "No event loop available"})
-                
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.error(
-            "execution agent launch failed",
-            extra={"agent": agent_name, "error": str(exc)}
-        )
-        return ToolResult(success=False, payload={"error": str(exc)})
+            result = await _ASYNC_RUNTIME_MANAGER.execute_agent(agent_name, instructions)
+            logger.info(
+                "execution agent completed",
+                extra={"agent": agent_name, "success": result.success},
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error(
+                "execution agent failed",
+                extra={"agent": agent_name, "error": str(exc)},
+            )
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        logger.error("No running event loop available for async execution")
+        return ToolResult(success=False, payload={"error": "No event loop available"})
+
+    loop.create_task(_execute_async())
 
     return ToolResult(
         success=True,

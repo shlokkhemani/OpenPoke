@@ -7,6 +7,8 @@ import os
 
 import uvicorn
 
+from .app import app
+
 
 def main() -> None:
     default_host = os.getenv("OPENPOKE_HOST", "0.0.0.0")
@@ -23,7 +25,7 @@ def main() -> None:
 
     logging.getLogger("uvicorn").setLevel(logging.INFO)
     uvicorn.run(
-        "server:app",
+        app,
         host=args.host,
         port=args.port,
         reload=args.reload,

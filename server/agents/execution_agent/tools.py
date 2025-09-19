@@ -4,8 +4,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 import json
 
-from server.services.execution_log import get_execution_agent_logs
-from server.services.gmail import execute_gmail_tool, _load_gmail_user_id
+from ...services.execution_log import get_execution_agent_logs
+from ...services.gmail import execute_gmail_tool, _load_gmail_user_id
 
 # OpenAI/OpenRouter-compatible tool schema list for the execution agent.
 TOOL_SCHEMAS: List[Dict[str, Any]] = [

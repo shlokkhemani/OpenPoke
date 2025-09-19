@@ -30,23 +30,16 @@ class InteractionAgentRuntime:
         self.model = settings.default_model or "openrouter/auto"
         self.conversation_log = get_conversation_log()
         self.tool_schemas = get_tool_schemas()
-        self.tool_schemas_by_name = {
-            schema.get("function", {}).get("name"): schema
-            for schema in self.tool_schemas
-            if schema.get("type") == "function"
-        }
 
         if not self.api_key:
             raise ValueError("OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.")
 
-    async def execute(self, user_message: str, temperature: float = 0.7, max_tokens: Optional[int] = None) -> InteractionResult:
+    async def execute(self, user_message: str) -> InteractionResult:
         """
         Execute the interaction agent with a user message.
 
         Args:
             user_message: The user's message
-            temperature: LLM temperature
-            max_tokens: Maximum tokens for response
 
         Returns:
             InteractionResult with the agent's response
@@ -71,8 +64,6 @@ class InteractionAgentRuntime:
             response = await self._make_llm_call(
                 system_prompt=system_prompt,
                 messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
                 tool_schemas=self._tool_subset(allowed_tool_names)
             )
 
@@ -109,8 +100,6 @@ class InteractionAgentRuntime:
     async def handle_agent_message(
         self,
         agent_message: str,
-        temperature: float = 0.7,
-        max_tokens: Optional[int] = None
     ) -> InteractionResult:
         """Process a message reported by an execution agent."""
         transcript_before = self.conversation_log.load_transcript()
@@ -123,8 +112,6 @@ class InteractionAgentRuntime:
         response = await self._make_llm_call(
             system_prompt=system_prompt,
             messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
             tool_schemas=self._tool_subset(allowed_tool_names)
         )
 
@@ -142,8 +129,6 @@ class InteractionAgentRuntime:
         self,
         system_prompt: str,
         messages: List[Dict[str, str]],
-        temperature: float,
-        max_tokens: Optional[int],
         tool_schemas: Optional[List[Dict[str, Any]]]
     ) -> Dict[str, Any]:
         """Make an LLM call via OpenRouter."""
@@ -152,8 +137,6 @@ class InteractionAgentRuntime:
             messages=messages,
             system=system_prompt,
             api_key=self.api_key,
-            temperature=temperature,
-            max_tokens=max_tokens,
             tools=tool_schemas
         )
 
@@ -196,8 +179,12 @@ class InteractionAgentRuntime:
 
     def _tool_subset(self, allowed_names: Set[str]) -> Optional[List[Dict[str, Any]]]:
         """Return schemas matching allowed tool names."""
-        schemas = [
-            schema for name, schema in self.tool_schemas_by_name.items()
-            if name in allowed_names and schema is not None
-        ]
+        schemas = []
+        for schema in self.tool_schemas:
+            function_block = schema.get("function")
+            if not function_block:
+                continue
+
+            if function_block.get("name") in allowed_names:
+                schemas.append(schema)
         return schemas or None

@@ -1,7 +1,7 @@
 """Tool definitions for interaction agent."""
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from ...logging_config import logger
 from ...services.agent_roster import get_agent_roster
@@ -89,7 +89,7 @@ def send_draft(
     to: str,
     subject: str,
     body: str,
-) -> Optional[str]:
+) -> None:
     """Record a draft update in the conversation log for the interaction agent."""
 
     log = get_conversation_log()
@@ -105,32 +105,14 @@ def send_draft(
         },
     )
 
-    return None
-
-
-TOOL_REGISTRY = {
-    "send_message_to_agent": send_message_to_agent,
-    "send_draft": send_draft,
-}
-
 
 def get_tool_schemas():
     """Return OpenAI-compatible tool schemas."""
     return TOOL_SCHEMAS
 
 
-def get_tool_registry():
-    """Return Python callables for executing tools by name."""
-    return TOOL_REGISTRY
-
-
 def handle_tool_call(name: str, arguments: Any) -> Optional[str]:
     """Handle tool calls from interaction agent."""
-    tool_func = TOOL_REGISTRY.get(name)
-    if not tool_func:
-        logger.warning(f"unexpected tool: {name}")
-        return None
-
     try:
         if isinstance(arguments, str):
             args = json.loads(arguments) if arguments.strip() else {}
@@ -138,11 +120,18 @@ def handle_tool_call(name: str, arguments: Any) -> Optional[str]:
             args = arguments
         else:
             return "Invalid arguments format"
-        return tool_func(**args)
+
+        if name == "send_message_to_agent":
+            return send_message_to_agent(**args)
+        if name == "send_draft":
+            return send_draft(**args)
+
+        logger.warning("unexpected tool", extra={"tool": name})
+        return None
     except json.JSONDecodeError:
         return "Invalid JSON"
-    except TypeError as e:
-        return f"Missing required arguments: {e}"
-    except Exception as e:
-        logger.error(f"tool call failed: {e}")
+    except TypeError as exc:
+        return f"Missing required arguments: {exc}"
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.error("tool call failed", extra={"tool": name, "error": str(exc)})
         return "Failed to execute"

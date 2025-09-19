@@ -1,0 +1,3451 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+================================================================
+File Summary
+================================================================
+
+Purpose:
+--------
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+
+File Format:
+------------
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Multiple file entries, each consisting of:
+  a. A separator line (================)
+  b. The file path (File: path/to/file)
+  c. Another separator line
+  d. The full contents of the file
+  e. A blank line
+
+Usage Guidelines:
+-----------------
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+
+Notes:
+------
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+
+Additional Info:
+----------------
+
+================================================================
+Directory Structure
+================================================================
+agents/
+  execution_agent/
+    __init__.py
+    agent.py
+    async_manager.py
+    runtime.py
+    system_prompt.md
+    tools.py
+  interaction_agent/
+    __init__.py
+    agent.py
+    runtime.py
+    system_prompt.md
+    tools.py
+  __init__.py
+  README.md
+data/
+  execution_agents/
+    roster.json
+  chat_history.json
+models/
+  __init__.py
+  chat.py
+  gmail.py
+  meta.py
+openrouter_client/
+  __init__.py
+  client.py
+plans/
+  agent-orchestration.md
+routes/
+  __init__.py
+  chat.py
+  gmail.py
+  meta.py
+  tools.py
+services/
+  __init__.py
+  agent_roster.py
+  chat.py
+  conversation_log.py
+  execution_log.py
+  gmail.py
+  history.py
+  send_message.py
+utils/
+  __init__.py
+  responses.py
+__init__.py
+.env.example
+app.py
+config.py
+logging_config.py
+requirements.txt
+server.py
+
+================================================================
+Files
+================================================================
+
+================
+File: agents/execution_agent/__init__.py
+================
+"""Execution agent assets."""
+
+from .agent import ExecutionAgent
+from .async_manager import AsyncRuntimeManager, ExecutionResult, PendingExecution
+from .runtime import ExecutionAgentRuntime
+from .tools import get_tool_schemas as get_execution_tool_schemas, get_tool_registry as get_execution_tool_registry
+
+__all__ = [
+    "AsyncRuntimeManager",
+    "ExecutionAgent",
+    "ExecutionAgentRuntime",
+    "ExecutionResult",
+    "PendingExecution",
+    "get_execution_tool_schemas",
+    "get_execution_tool_registry",
+]
+
+================
+File: agents/execution_agent/agent.py
+================
+"""Execution Agent implementation."""
+
+from pathlib import Path
+from typing import List, Optional, Dict, Any
+
+from ...services.execution_log import get_execution_agent_logs
+from ...logging_config import logger
+
+
+# Load system prompt template from file
+_prompt_path = Path(__file__).parent / "system_prompt.md"
+if _prompt_path.exists():
+    SYSTEM_PROMPT_TEMPLATE = _prompt_path.read_text(encoding="utf-8").strip()
+else:
+    # Placeholder template - you'll replace this with actual instructions
+    SYSTEM_PROMPT_TEMPLATE = """You are an execution agent responsible for completing specific tasks using available tools.
+
+Agent Name: {agent_name}
+Purpose: {agent_purpose}
+
+Instructions:
+[TO BE FILLED IN BY USER]
+
+You have access to Gmail tools to help complete your tasks. When given instructions:
+1. Analyze what needs to be done
+2. Use the appropriate tools to complete the task
+3. Provide clear status updates on your actions
+
+Be thorough, accurate, and efficient in your execution."""
+
+
+class ExecutionAgent:
+    """Manages state and history for an execution agent."""
+
+    def __init__(
+        self,
+        name: str,
+        conversation_limit: Optional[int] = None
+    ):
+        """
+        Initialize an execution agent.
+
+        Args:
+            name: Human-readable agent name (e.g., 'conversation with keith')
+            conversation_limit: Optional limit on past conversations to include (None = all)
+        """
+        self.name = name
+        self.conversation_limit = conversation_limit
+        self._log_store = get_execution_agent_logs()
+
+    def build_system_prompt(self) -> str:
+        """Build the system prompt for this agent."""
+        # Extract purpose from agent name (this is a simple heuristic)
+        agent_purpose = f"Handle tasks related to: {self.name}"
+
+        return SYSTEM_PROMPT_TEMPLATE.format(
+            agent_name=self.name,
+            agent_purpose=agent_purpose
+        )
+
+    def build_system_prompt_with_history(self) -> str:
+        """
+        Build system prompt including agent history.
+
+        Returns:
+            System prompt with embedded history transcript
+        """
+        # Get base system prompt
+        base_prompt = self.build_system_prompt()
+
+        # Load history transcript
+        transcript = self._log_store.load_transcript(self.name)
+
+        if transcript:
+            # Apply conversation limit if needed
+            if self.conversation_limit and self.conversation_limit > 0:
+                # Parse entries and limit them
+                lines = transcript.split('\n')
+                request_count = sum(1 for line in lines if '<agent request>' in line)
+
+                if request_count > self.conversation_limit:
+                    # Find where to cut
+                    kept_requests = 0
+                    cutoff_index = len(lines)
+                    for i in range(len(lines) - 1, -1, -1):
+                        if '<agent request>' in lines[i]:
+                            kept_requests += 1
+                            if kept_requests == self.conversation_limit:
+                                cutoff_index = i
+                                break
+                    transcript = '\n'.join(lines[cutoff_index:])
+
+            return f"{base_prompt}\n\n# Execution History\n\n{transcript}"
+
+        return base_prompt
+
+    def build_messages_for_llm(self, current_instruction: str) -> List[Dict[str, str]]:
+        """
+        Build message array for LLM call.
+
+        Args:
+            current_instruction: Current instruction from interaction agent
+
+        Returns:
+            List of messages in OpenRouter format
+        """
+        # For execution agents, we use system prompt with history
+        # and just the current instruction as the user message
+        return [
+            {"role": "user", "content": current_instruction}
+        ]
+
+    def record_response(self, response: str) -> None:
+        """Record agent's response to the log."""
+        self._log_store.record_agent_response(self.name, response)
+
+    def record_tool_execution(self, tool_name: str, arguments: str, result: str) -> None:
+        """Record tool execution details."""
+        # Record the action (tool call)
+        self._log_store.record_action(self.name, f"Calling {tool_name} with: {arguments[:200]}")
+        # Record the tool response
+        self._log_store.record_tool_response(self.name, tool_name, result[:500])
+
+================
+File: agents/execution_agent/async_manager.py
+================
+"""Async Runtime Manager for parallel execution agent processing."""
+
+import asyncio
+import uuid
+from typing import Dict, List, Optional, Any
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from dataclasses import dataclass, field
+from datetime import datetime
+
+from .runtime import ExecutionAgentRuntime, ExecutionResult
+from ...logging_config import logger
+
+
+@dataclass
+class PendingExecution:
+    """Track a pending execution request."""
+    request_id: str
+    agent_name: str
+    instructions: str
+    created_at: datetime = field(default_factory=datetime.now)
+    future: Optional[asyncio.Future] = None
+
+
+class AsyncRuntimeManager:
+    """Manages parallel execution of multiple agents."""
+
+    def __init__(self, timeout_seconds: int = 60):
+        """
+        Initialize the async runtime manager.
+
+        Args:
+            timeout_seconds: Timeout for each execution
+        """
+        self.timeout_seconds = timeout_seconds
+        self._executor = ThreadPoolExecutor(max_workers=10)
+        self._pending: Dict[str, PendingExecution] = {}
+
+    async def execute_agent(
+        self,
+        agent_name: str,
+        instructions: str,
+        request_id: Optional[str] = None
+    ) -> ExecutionResult:
+        """
+        Execute an agent asynchronously.
+
+        Args:
+            agent_name: Name of the agent to execute
+            instructions: Instructions for the agent
+            request_id: Optional request ID for tracking
+
+        Returns:
+            ExecutionResult from the agent
+        """
+        if not request_id:
+            request_id = str(uuid.uuid4())
+
+        # Create pending execution record
+        pending = PendingExecution(
+            request_id=request_id,
+            agent_name=agent_name,
+            instructions=instructions
+        )
+        self._pending[request_id] = pending
+
+        try:
+            logger.info(f"Starting execution for agent {agent_name} (request {request_id})")
+
+            # Run execution in thread pool (since OpenRouter client is sync)
+            loop = asyncio.get_event_loop()
+            future = loop.run_in_executor(
+                self._executor,
+                self._execute_agent_sync,
+                agent_name,
+                instructions
+            )
+
+            pending.future = future
+
+            # Wait with timeout
+            result = await asyncio.wait_for(future, timeout=self.timeout_seconds)
+
+            logger.info(f"Completed execution for agent {agent_name} (request {request_id})")
+            return result
+
+        except asyncio.TimeoutError:
+            logger.error(f"Execution timeout for agent {agent_name} (request {request_id})")
+            return ExecutionResult(
+                agent_name=agent_name,
+                success=False,
+                response=f"Execution timed out after {self.timeout_seconds} seconds",
+                error="Timeout"
+            )
+        except Exception as e:
+            logger.error(f"Execution failed for agent {agent_name}: {e}")
+            return ExecutionResult(
+                agent_name=agent_name,
+                success=False,
+                response=f"Execution failed: {str(e)}",
+                error=str(e)
+            )
+        finally:
+            # Clean up pending record
+            self._pending.pop(request_id, None)
+
+    async def execute_multiple_agents(
+        self,
+        executions: List[Dict[str, str]]
+    ) -> List[ExecutionResult]:
+        """
+        Execute multiple agents in parallel.
+
+        Args:
+            executions: List of dicts with 'agent_name' and 'instructions'
+
+        Returns:
+            List of ExecutionResults in the same order as input
+        """
+        tasks = []
+        for execution in executions:
+            agent_name = execution.get("agent_name", "")
+            instructions = execution.get("instructions", "")
+            request_id = execution.get("request_id")
+
+            if agent_name and instructions:
+                task = self.execute_agent(agent_name, instructions, request_id)
+                tasks.append(task)
+            else:
+                # Invalid execution, add error result
+                tasks.append(self._create_error_result(agent_name or "unknown", "Missing agent name or instructions"))
+
+        # Wait for all tasks to complete
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Convert exceptions to ExecutionResults
+            final_results = []
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    agent_name = executions[i].get("agent_name", "unknown")
+                    final_results.append(ExecutionResult(
+                        agent_name=agent_name,
+                        success=False,
+                        response=f"Unexpected error: {str(result)}",
+                        error=str(result)
+                    ))
+                else:
+                    final_results.append(result)
+
+            return final_results
+        else:
+            return []
+
+    def _execute_agent_sync(self, agent_name: str, instructions: str) -> ExecutionResult:
+        """Synchronous execution of an agent (runs in thread pool)."""
+        runtime = ExecutionAgentRuntime(agent_name=agent_name)
+        return runtime.execute(instructions)
+
+    async def _create_error_result(self, agent_name: str, error: str) -> ExecutionResult:
+        """Create an error result."""
+        return ExecutionResult(
+            agent_name=agent_name,
+            success=False,
+            response=f"Error: {error}",
+            error=error
+        )
+
+    def get_pending_executions(self) -> List[Dict[str, Any]]:
+        """Get list of currently pending executions."""
+        return [
+            {
+                "request_id": p.request_id,
+                "agent_name": p.agent_name,
+                "created_at": p.created_at.isoformat(),
+                "elapsed_seconds": (datetime.now() - p.created_at).total_seconds()
+            }
+            for p in self._pending.values()
+        ]
+
+    async def shutdown(self):
+        """Shutdown the runtime manager."""
+        # Cancel any pending futures
+        for pending in self._pending.values():
+            if pending.future and not pending.future.done():
+                pending.future.cancel()
+
+        # Shutdown executor
+        self._executor.shutdown(wait=False)
+
+================
+File: agents/execution_agent/runtime.py
+================
+"""Simplified Execution Agent Runtime."""
+
+import asyncio
+import json
+from typing import Dict, Any, List, Optional, Tuple
+from dataclasses import dataclass
+
+from .agent import ExecutionAgent
+from .tools import get_tool_schemas, get_tool_registry
+from ...config import get_settings
+from ...openrouter_client import request_chat_completion
+from ...logging_config import logger
+
+
+@dataclass
+class ExecutionResult:
+    """Result from an execution agent."""
+    agent_name: str
+    success: bool
+    response: str
+    error: Optional[str] = None
+    tools_executed: List[str] = None
+
+
+class ExecutionAgentRuntime:
+    """Manages the execution of a single agent request."""
+
+    MAX_TOOL_ITERATIONS = 8
+
+    def __init__(self, agent_name: str):
+        settings = get_settings()
+        self.agent = ExecutionAgent(agent_name)
+        self.api_key = settings.openrouter_api_key
+        self.model = settings.default_model or "openrouter/auto"
+        self.tool_registry = get_tool_registry()
+        self.tool_schemas = get_tool_schemas()
+
+        if not self.api_key:
+            raise ValueError("OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.")
+
+    def execute(self, instructions: str) -> ExecutionResult:
+        """Execute the agent with given instructions."""
+        try:
+            # Build system prompt with history
+            system_prompt = self.agent.build_system_prompt_with_history()
+
+            # Start conversation with the instruction
+            messages = [{"role": "user", "content": instructions}]
+            tools_executed: List[str] = []
+            final_response: Optional[str] = None
+
+            for iteration in range(self.MAX_TOOL_ITERATIONS):
+                logger.info(
+                    f"Execution agent {self.agent.name}: requesting plan (iteration {iteration + 1})"
+                )
+                response = self._make_llm_call(system_prompt, messages, with_tools=True)
+                assistant_message = response.get("choices", [{}])[0].get("message", {})
+
+                if not assistant_message:
+                    raise RuntimeError("LLM response did not include an assistant message")
+
+                raw_tool_calls = assistant_message.get("tool_calls", []) or []
+                parsed_tool_calls = self._extract_tool_calls(raw_tool_calls)
+
+                assistant_entry: Dict[str, Any] = {
+                    "role": "assistant",
+                    "content": assistant_message.get("content", "") or "",
+                }
+                if raw_tool_calls:
+                    assistant_entry["tool_calls"] = raw_tool_calls
+                messages.append(assistant_entry)
+
+                if not parsed_tool_calls:
+                    final_response = assistant_entry["content"] or "No action required."
+                    break
+
+                for tool_call in parsed_tool_calls:
+                    tool_name = tool_call.get("name", "")
+                    tool_args = tool_call.get("arguments", {})
+                    call_id = tool_call.get("id")
+
+                    if not tool_name:
+                        logger.warning("Tool call missing name: %s", tool_call)
+                        failure = {"error": "Tool call missing name; unable to execute."}
+                        tool_message = {
+                            "role": "tool",
+                            "tool_call_id": call_id or "unknown_tool",
+                            "content": self._format_tool_result(
+                                tool_name or "<unknown>", False, failure, tool_args
+                            ),
+                        }
+                        messages.append(tool_message)
+                        continue
+
+                    tools_executed.append(tool_name)
+                    logger.info(f"Executing tool {tool_name}")
+
+                    success, result = self._execute_tool(tool_name, tool_args)
+
+                    if success:
+                        logger.info(f"Tool {tool_name} completed successfully")
+                        record_payload = self._safe_json_dump(result)
+                    else:
+                        error_detail = result.get("error") if isinstance(result, dict) else str(result)
+                        logger.warning(f"Tool {tool_name} failed: {error_detail}")
+                        logger.debug(f"Failed with args: {json.dumps(tool_args, indent=2)}")
+                        record_payload = error_detail
+
+                    self.agent.record_tool_execution(
+                        tool_name,
+                        self._safe_json_dump(tool_args),
+                        record_payload
+                    )
+
+                    tool_message = {
+                        "role": "tool",
+                        "tool_call_id": call_id or tool_name,
+                        "content": self._format_tool_result(tool_name, success, result, tool_args),
+                    }
+                    messages.append(tool_message)
+
+            else:
+                raise RuntimeError("Reached tool iteration limit without final response")
+
+            if final_response is None:
+                raise RuntimeError("LLM did not return a final response")
+
+            self.agent.record_response(final_response)
+            self._notify_interaction_agent(True, final_response)
+
+            return ExecutionResult(
+                agent_name=self.agent.name,
+                success=True,
+                response=final_response,
+                tools_executed=tools_executed
+            )
+
+        except Exception as e:
+            logger.error(f"Execution agent {self.agent.name} failed: {e}")
+            error_msg = str(e)
+            failure_text = f"Failed to complete task: {error_msg}"
+            self.agent.record_response(f"Error: {error_msg}")
+            self._notify_interaction_agent(False, failure_text)
+
+            return ExecutionResult(
+                agent_name=self.agent.name,
+                success=False,
+                response=failure_text,
+                error=error_msg
+            )
+
+    def _make_llm_call(self, system_prompt: str, messages: List[Dict], with_tools: bool) -> Dict:
+        """Make an LLM call."""
+        tools_to_send = self.tool_schemas if with_tools else None
+        logger.info(f"Execution agent calling with model: {self.model}, tools: {len(tools_to_send) if tools_to_send else 0}")
+        return request_chat_completion(
+            model=self.model,
+            messages=messages,
+            system=system_prompt,
+            api_key=self.api_key,
+            tools=tools_to_send,
+            temperature=0.7
+        )
+
+    def _extract_tool_calls(self, raw_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Extract tool calls from an assistant message."""
+        tool_calls: List[Dict[str, Any]] = []
+
+        for tool in raw_tools:
+            function = tool.get("function", {})
+            name = function.get("name", "")
+            args = function.get("arguments", "")
+
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args) if args else {}
+                except json.JSONDecodeError:
+                    args = {}
+
+            if name:
+                tool_calls.append({
+                    "id": tool.get("id"),
+                    "name": name,
+                    "arguments": args,
+                })
+
+        return tool_calls
+
+    def _safe_json_dump(self, payload: Any) -> str:
+        """Serialize payload to JSON, falling back to string representation."""
+        try:
+            return json.dumps(payload, default=str)
+        except TypeError:
+            return str(payload)
+
+    def _format_tool_result(
+        self,
+        tool_name: str,
+        success: bool,
+        result: Any,
+        arguments: Dict[str, Any],
+    ) -> str:
+        """Build a structured string for tool responses."""
+        if success:
+            payload: Dict[str, Any] = {
+                "tool": tool_name,
+                "status": "success",
+                "arguments": arguments,
+                "result": result,
+            }
+        else:
+            error_detail = result.get("error") if isinstance(result, dict) else str(result)
+            payload = {
+                "tool": tool_name,
+                "status": "error",
+                "arguments": arguments,
+                "error": error_detail,
+            }
+        return self._safe_json_dump(payload)
+
+    def _notify_interaction_agent(self, success: bool, response_text: str) -> None:
+        """Send execution results to the interaction agent."""
+        status = "SUCCESS" if success else "FAILED"
+        agent_message = f"[{status}] {self.agent.name}: {response_text}"
+
+        from ..interaction_agent.runtime import InteractionAgentRuntime
+
+        runtime = InteractionAgentRuntime()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(runtime.handle_agent_message(agent_message))
+            return
+
+        loop.create_task(runtime.handle_agent_message(agent_message))
+
+    def _execute_tool(self, tool_name: str, arguments: Dict) -> Tuple[bool, Any]:
+        """Execute a tool. Returns (success, result)."""
+        tool_func = self.tool_registry.get(tool_name)
+        if not tool_func:
+            return False, {"error": f"Unknown tool: {tool_name}"}
+
+        try:
+            result = tool_func(**arguments)
+            return True, result
+        except Exception as e:
+            return False, {"error": str(e)}
+
+================
+File: agents/execution_agent/system_prompt.md
+================
+You are the assistant of Poke by the Interaction Company of California. You are the "execution engine" of Poke, helping complete tasks for Poke, while Poke talks to the user. Your job is to execute and accomplish a goal, and you do not have direct access to the user.
+
+IMPORTANT: Don't ever execute a draft unless you receive explicit confirmation to execute it. If you are instructed to send an email, first JUST create the draft. Then, when the user confirms draft, we can send it. 
+
+
+Your final output is directed to Poke, which handles user conversations and presents your results to the user. Focus on providing Poke with adequate contextual information; you are not responsible for framing responses in a user-friendly way.
+
+If it needs more data from Poke or the user, you should also include it in your final output message. If you ever need to send a message to the user, you should tell Poke to forward that message to the user.
+
+Remember that your last output message (summary) will be forwarded to Poke. In that message, provide all relevant information and avoid preamble or postamble (e.g., "Here's what I found:" or "Let me know if this looks good to send"). If you create a draft, you need to send the exact to, subject, and body of the draft to the interaction agent verbatim. 
+
+This conversation history may have gaps. It may start from the middle of a conversation, or it may be missing messages. The only assumption you can make is that Poke's latest message is the most recent one, and representative of Poke's current requests. Address that message directly. The other messages are just for context.
+
+Before you call any tools, reason through why you are calling them by explaining the thought process. If it could possibly be helpful to call more than one tool at once, then do so.
+
+If you have context that would help the execution of a tool call (e.g. the user is searching for emails from a person and you know that person's email address), pass that context along.
+
+When searching for personal information about the user, it's probably smart to look through their emails.
+
+
+
+
+Agent Name: {agent_name}
+Purpose: {agent_purpose}
+
+# Instructions
+[TO BE FILLED IN BY USER - Add your specific instructions here]
+
+# Available Tools
+You have access to the following Gmail tools:
+- gmail_create_draft: Create an email draft
+- gmail_execute_draft: Send a previously created draft
+- gmail_forward_email: Forward an existing email
+- gmail_reply_to_thread: Reply to an email thread
+
+# Guidelines
+1. Analyze the instructions carefully before taking action
+2. Use the appropriate tools to complete the task
+3. Be thorough and accurate in your execution
+4. Provide clear, concise responses about what you accomplished
+5. If you encounter errors, explain what went wrong and what you tried
+
+When you receive instructions, think step-by-step about what needs to be done, then execute the necessary tools to complete the task.
+
+================
+File: agents/execution_agent/tools.py
+================
+from __future__ import annotations
+
+from typing import Any, Callable, Dict, List, Optional
+
+import json
+
+from server.services.execution_log import get_execution_agent_logs
+from server.services.gmail import execute_gmail_tool, _load_gmail_user_id
+
+# OpenAI/OpenRouter-compatible tool schema list for the execution agent.
+TOOL_SCHEMAS: List[Dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "gmail_create_draft",
+            "description": "Create a Gmail draft via Composio, supporting html/plain bodies, cc/bcc, and attachments.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "recipient_email": {
+                        "type": "string",
+                        "description": "Primary recipient email for the draft.",
+                    },
+                    "subject": {"type": "string", "description": "Email subject."},
+                    "body": {
+                        "type": "string",
+                        "description": "Email body. Use HTML markup when is_html is true.",
+                    },
+                    "cc": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional list of CC recipient emails.",
+                    },
+                    "bcc": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional list of BCC recipient emails.",
+                    },
+                    "extra_recipients": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Additional recipients if the draft should include more addresses.",
+                    },
+                    "is_html": {
+                        "type": "boolean",
+                        "description": "Set true when the body contains HTML content.",
+                    },
+                    "thread_id": {
+                        "type": "string",
+                        "description": "Existing Gmail thread id if this draft belongs to a thread.",
+                    },
+                    "user_id": {
+                        "type": "string",
+                        "description": "Override Gmail user id if not 'me'.",
+                    },
+                    "attachment": {
+                        "type": "object",
+                        "description": "Single attachment metadata (requires Composio-uploaded asset).",
+                        "properties": {
+                            "s3key": {"type": "string", "description": "S3 key of uploaded file."},
+                            "name": {"type": "string", "description": "Attachment filename."},
+                            "mimetype": {"type": "string", "description": "Attachment MIME type."},
+                        },
+                        "required": ["s3key", "name", "mimetype"],
+                    },
+                },
+                "required": ["recipient_email", "subject", "body"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "gmail_execute_draft",
+            "description": "Send a previously created Gmail draft using Composio.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "draft_id": {
+                        "type": "string",
+                        "description": "Identifier of the Gmail draft to send.",
+                    },
+                    "user_id": {
+                        "type": "string",
+                        "description": "Override Gmail user id if not 'me'.",
+                    },
+                },
+                "required": ["draft_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "gmail_forward_email",
+            "description": "Forward an existing Gmail message with optional additional context.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message_id": {
+                        "type": "string",
+                        "description": "Gmail message id to forward.",
+                    },
+                    "recipient_email": {
+                        "type": "string",
+                        "description": "Email address to receive the forwarded message.",
+                    },
+                    "additional_text": {
+                        "type": "string",
+                        "description": "Optional text to prepend when forwarding.",
+                    },
+                    "user_id": {
+                        "type": "string",
+                        "description": "Override Gmail user id if not 'me'.",
+                    },
+                },
+                "required": ["message_id", "recipient_email"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "gmail_reply_to_thread",
+            "description": "Send a reply within an existing Gmail thread via Composio.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "thread_id": {
+                        "type": "string",
+                        "description": "Gmail thread id to reply to.",
+                    },
+                    "recipient_email": {
+                        "type": "string",
+                        "description": "Primary recipient for the reply (usually the original sender).",
+                    },
+                    "message_body": {
+                        "type": "string",
+                        "description": "Reply body. Use HTML markup when is_html is true.",
+                    },
+                    "cc": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional list of CC recipient emails.",
+                    },
+                    "bcc": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional list of BCC recipient emails.",
+                    },
+                    "extra_recipients": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Additional recipients if needed.",
+                    },
+                    "is_html": {
+                        "type": "boolean",
+                        "description": "Set true when the body contains HTML content.",
+                    },
+                    "attachment": {
+                        "type": "object",
+                        "description": "Single attachment metadata (requires Composio-uploaded asset).",
+                        "properties": {
+                            "s3key": {"type": "string", "description": "S3 key of uploaded file."},
+                            "name": {"type": "string", "description": "Attachment filename."},
+                            "mimetype": {"type": "string", "description": "Attachment MIME type."},
+                        },
+                        "required": ["s3key", "name", "mimetype"],
+                    },
+                    "user_id": {
+                        "type": "string",
+                        "description": "Override Gmail user id if not 'me'.",
+                    },
+                },
+                "required": ["thread_id", "recipient_email", "message_body"],
+                "additionalProperties": False,
+            },
+        },
+    },
+]
+_LOG_STORE = get_execution_agent_logs()
+
+
+def _execute(tool_name: str, composio_user_id: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Execute a Gmail tool and record the action for the execution agent journal."""
+    # Don't use composio_user_id as agent_name - it's not an agent, it's a user ID
+    agent_name = "gmail-execution-agent"
+    payload = {k: v for k, v in arguments.items() if v is not None}
+    payload_str = json.dumps(payload, ensure_ascii=False, sort_keys=True) if payload else "{}"
+    try:
+        result = execute_gmail_tool(tool_name, composio_user_id, arguments=payload)
+    except Exception as exc:
+        _LOG_STORE.record_action(
+            agent_name,
+            description=f"{tool_name} failed | args={payload_str} | error={exc}",
+        )
+        raise
+
+    _LOG_STORE.record_action(
+        agent_name,
+        description=f"{tool_name} succeeded | args={payload_str}",
+    )
+    return result
+
+
+def gmail_create_draft(
+    recipient_email: str,
+    subject: str,
+    body: str,
+    cc: Optional[List[str]] = None,
+    bcc: Optional[List[str]] = None,
+    extra_recipients: Optional[List[str]] = None,
+    is_html: Optional[bool] = None,
+    thread_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    attachment: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    arguments: Dict[str, Any] = {
+        "recipient_email": recipient_email,
+        "subject": subject,
+        "body": body,
+        "cc": cc,
+        "bcc": bcc,
+        "extra_recipients": extra_recipients,
+        "is_html": is_html,
+        "thread_id": thread_id,
+        "user_id": user_id,
+        "attachment": attachment,
+    }
+    composio_user_id = _load_gmail_user_id()
+    if not composio_user_id:
+        return {"error": "Gmail not connected. Please connect Gmail in settings first."}
+    return _execute("GMAIL_CREATE_EMAIL_DRAFT", composio_user_id, arguments)
+
+
+def gmail_execute_draft(
+    draft_id: str,
+    user_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    arguments = {"draft_id": draft_id, "user_id": user_id}
+    composio_user_id = _load_gmail_user_id()
+    if not composio_user_id:
+        return {"error": "Gmail not connected. Please connect Gmail in settings first."}
+    return _execute("GMAIL_SEND_DRAFT", composio_user_id, arguments)
+
+
+def gmail_forward_email(
+    message_id: str,
+    recipient_email: str,
+    additional_text: Optional[str] = None,
+    user_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    arguments = {
+        "message_id": message_id,
+        "recipient_email": recipient_email,
+        "additional_text": additional_text,
+        "user_id": user_id,
+    }
+    composio_user_id = _load_gmail_user_id()
+    if not composio_user_id:
+        return {"error": "Gmail not connected. Please connect Gmail in settings first."}
+    return _execute("GMAIL_FORWARD_MESSAGE", composio_user_id, arguments)
+
+
+def gmail_reply_to_thread(
+    thread_id: str,
+    recipient_email: str,
+    message_body: str,
+    cc: Optional[List[str]] = None,
+    bcc: Optional[List[str]] = None,
+    extra_recipients: Optional[List[str]] = None,
+    is_html: Optional[bool] = None,
+    attachment: Optional[Dict[str, Any]] = None,
+    user_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    arguments = {
+        "thread_id": thread_id,
+        "recipient_email": recipient_email,
+        "message_body": message_body,
+        "cc": cc,
+        "bcc": bcc,
+        "extra_recipients": extra_recipients,
+        "is_html": is_html,
+        "attachment": attachment,
+        "user_id": user_id,
+    }
+    composio_user_id = _load_gmail_user_id()
+    if not composio_user_id:
+        return {"error": "Gmail not connected. Please connect Gmail in settings first."}
+    return _execute("GMAIL_REPLY_TO_THREAD", composio_user_id, arguments)
+
+
+# Registry mapping tool names to Python callables.
+TOOL_REGISTRY: Dict[str, Callable[..., Any]] = {
+    "gmail_create_draft": gmail_create_draft,
+    "gmail_execute_draft": gmail_execute_draft,
+    "gmail_forward_email": gmail_forward_email,
+    "gmail_reply_to_thread": gmail_reply_to_thread,
+}
+
+
+def get_tool_schemas() -> List[Dict[str, Any]]:
+    """Return OpenAI-compatible tool schemas for the execution agent."""
+    return TOOL_SCHEMAS
+
+
+def get_tool_registry() -> Dict[str, Callable[..., Any]]:
+    """Return Python callables for executing tools by name."""
+    return TOOL_REGISTRY
+
+================
+File: agents/interaction_agent/__init__.py
+================
+"""Interaction agent module."""
+
+from .agent import (
+    build_system_prompt,
+    prepare_openrouter_messages,
+    prepare_message_with_history
+)
+from .runtime import InteractionAgentRuntime, InteractionResult
+from .tools import get_tool_schemas, handle_tool_call
+
+MAX_OPENROUTER_MESSAGES = 12
+
+__all__ = [
+    "InteractionAgentRuntime",
+    "InteractionResult",
+    "build_system_prompt",
+    "prepare_openrouter_messages",
+    "prepare_message_with_history",
+    "get_tool_schemas",
+    "handle_tool_call",
+    "MAX_OPENROUTER_MESSAGES",
+]
+
+================
+File: agents/interaction_agent/agent.py
+================
+"""Core interaction agent functionality."""
+
+from html import escape
+from pathlib import Path
+from typing import Dict, List, Optional
+
+from ...models import ChatMessage
+from ...services.agent_roster import get_agent_roster
+
+MAX_OPENROUTER_MESSAGES = 12
+
+# Load system prompt from file
+_prompt_path = Path(__file__).parent / "system_prompt.md"
+SYSTEM_PROMPT = _prompt_path.read_text(encoding="utf-8").strip()
+
+
+def prepare_openrouter_messages(
+    history: List[ChatMessage],
+    latest_user_text: str,
+    *,
+    max_messages: int = MAX_OPENROUTER_MESSAGES,
+) -> List[Dict[str, str]]:
+    """Convert chat history into OpenRouter-compatible messages with bounds."""
+    sanitized = [
+        {"role": msg.role.strip().lower(), "content": msg.content.strip()}
+        for msg in history
+        if msg.role.strip().lower() in {"user", "assistant"} and msg.content.strip()
+    ]
+
+    if not sanitized or sanitized[-1]["role"] != "user":
+        sanitized.append({"role": "user", "content": latest_user_text})
+
+    return sanitized[-max_messages:] if max_messages > 0 else sanitized
+
+
+def prepare_message_with_history(
+    latest_user_text: str,
+    transcript: str,
+    message_type: str = "user"
+) -> List[Dict[str, str]]:
+    """
+    Prepare a single user message that includes conversation history as tags.
+
+    Args:
+        latest_user_text: The new message content
+        transcript: Previous conversation history
+        message_type: "user" or "agent" to label the new message appropriately
+    """
+    if transcript.strip():
+        # Include history as tags before the new message
+        if message_type == "agent":
+            content = f"<conversation_history>\n{transcript}\n</conversation_history>\n\n<new_agent_message>\n{latest_user_text}\n</new_agent_message>"
+        else:
+            content = f"<conversation_history>\n{transcript}\n</conversation_history>\n\n<new_user_message>\n{latest_user_text}\n</new_user_message>"
+    else:
+        # No history, just wrap the new message
+        if message_type == "agent":
+            content = f"<new_agent_message>\n{latest_user_text}\n</new_agent_message>"
+        else:
+            content = f"<new_user_message>\n{latest_user_text}\n</new_user_message>"
+
+    return [{"role": "user", "content": content}]
+
+
+def build_system_prompt() -> str:
+    """Compose the system prompt used for the interaction agent."""
+    sections = [SYSTEM_PROMPT]
+    sections.extend(["<active_agents>", _render_active_agents(), "</active_agents>"])
+    return "\n\n".join(sections)
+
+
+def _render_active_agents() -> str:
+    """Render active agents for the system prompt."""
+    roster = get_agent_roster()
+    roster.load()  # Reload from disk to get latest agents
+    agents = roster.get_agents()
+
+    if not agents:
+        return "None"
+
+    # Simple list of agent names
+    rendered = []
+    for agent_name in agents:
+        name = escape(agent_name or "agent", quote=True)
+        rendered.append(f'<agent name="{name}"></agent>')
+
+    return "\n".join(rendered)
+
+================
+File: agents/interaction_agent/runtime.py
+================
+"""Interaction Agent Runtime - handles LLM calls for user and agent turns."""
+
+from typing import Dict, Any, List, Optional, Set
+from dataclasses import dataclass
+
+from .agent import build_system_prompt, prepare_message_with_history
+from .tools import get_tool_schemas, handle_tool_call
+from ...config import get_settings
+from ...services.conversation_log import get_conversation_log
+from ...openrouter_client import request_chat_completion
+from ...logging_config import logger
+
+
+@dataclass
+class InteractionResult:
+    """Result from the interaction agent."""
+    success: bool
+    response: str
+    error: Optional[str] = None
+    execution_agents_used: int = 0
+
+
+class InteractionAgentRuntime:
+    """Manages the interaction agent's request processing."""
+
+    def __init__(self):
+        """Initialize the interaction agent runtime."""
+        settings = get_settings()
+        self.api_key = settings.openrouter_api_key
+        self.model = settings.default_model or "openrouter/auto"
+        self.conversation_log = get_conversation_log()
+        self.tool_schemas = get_tool_schemas()
+        self.tool_schemas_by_name = {
+            schema.get("function", {}).get("name"): schema
+            for schema in self.tool_schemas
+            if schema.get("type") == "function"
+        }
+
+        if not self.api_key:
+            raise ValueError("OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.")
+
+    async def execute(self, user_message: str, temperature: float = 0.7, max_tokens: Optional[int] = None) -> InteractionResult:
+        """
+        Execute the interaction agent with a user message.
+
+        Args:
+            user_message: The user's message
+            temperature: LLM temperature
+            max_tokens: Maximum tokens for response
+
+        Returns:
+            InteractionResult with the agent's response
+        """
+        try:
+            # Load conversation transcript BEFORE recording the new message
+            # This way we only get the history, not the current message
+            transcript_before = self.conversation_log.load_transcript()
+
+            # NOW record the user message for future history
+            self.conversation_log.record_user_message(user_message)
+
+            # Build system prompt (no history, just personality + active agents)
+            system_prompt = build_system_prompt()
+
+            # Prepare messages with history included as tags, current message separate
+            messages = prepare_message_with_history(user_message, transcript_before, message_type="user")
+
+            logger.info("Processing user message through interaction agent")
+
+            allowed_tool_names: Set[str] = {"send_message_to_agent"}
+            response = await self._make_llm_call(
+                system_prompt=system_prompt,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                tool_schemas=self._tool_subset(allowed_tool_names)
+            )
+
+            assistant_response, tool_used = self._process_model_response(response, allowed_tool_names)
+
+            final_response = ""
+            if not tool_used:
+                raw_reply = assistant_response.strip()
+                if raw_reply:
+                    self.conversation_log.record_reply(raw_reply)
+                    final_response = raw_reply
+
+            return InteractionResult(
+                success=True,
+                response=final_response,
+            )
+
+        except Exception as e:
+            logger.error(f"Interaction agent failed: {e}")
+            error_msg = str(e)
+
+            # Still try to record the error
+            try:
+                self.conversation_log.record_reply(f"Error: {error_msg}")
+            except:
+                pass
+
+            return InteractionResult(
+                success=False,
+                response=f"I encountered an error: {error_msg}",
+                error=error_msg
+            )
+
+    async def handle_agent_message(
+        self,
+        agent_message: str,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None
+    ) -> InteractionResult:
+        """Process a message reported by an execution agent."""
+        transcript_before = self.conversation_log.load_transcript()
+        self.conversation_log.record_agent_message(agent_message)
+
+        system_prompt = build_system_prompt()
+        messages = prepare_message_with_history(agent_message, transcript_before, message_type="agent")
+
+        allowed_tool_names: Set[str] = {"send_draft"}
+        response = await self._make_llm_call(
+            system_prompt=system_prompt,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            tool_schemas=self._tool_subset(allowed_tool_names)
+        )
+
+        assistant_response, _ = self._process_model_response(response, allowed_tool_names)
+
+        raw_reply = assistant_response.strip()
+        final_response = raw_reply
+
+        if raw_reply:
+            self.conversation_log.record_reply(raw_reply)
+
+        return InteractionResult(success=True, response=final_response)
+
+    async def _make_llm_call(
+        self,
+        system_prompt: str,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        max_tokens: Optional[int],
+        tool_schemas: Optional[List[Dict[str, Any]]]
+    ) -> Dict[str, Any]:
+        """Make an LLM call via OpenRouter."""
+        return request_chat_completion(
+            model=self.model,
+            messages=messages,
+            system=system_prompt,
+            api_key=self.api_key,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            tools=tool_schemas
+        )
+
+    def _process_model_response(
+        self,
+        response: Dict[str, Any],
+        allowed_tool_names: Set[str]
+    ) -> tuple[str, bool]:
+        """Extract assistant text and execute allowed tool calls."""
+        choice = (response.get("choices") or [{}])[0]
+        message = choice.get("message") or {}
+
+        content = message.get("content")
+        assistant_text = content if isinstance(content, str) else ""
+
+        tool_used = False
+        tool_calls = message.get("tool_calls") or []
+        if isinstance(tool_calls, list):
+            for tool_call in tool_calls:
+                name = str(tool_call.get("function", {}).get("name") or "").strip()
+                arguments = tool_call.get("function", {}).get("arguments")
+
+                if not name:
+                    continue
+
+                if name not in allowed_tool_names:
+                    logger.warning(
+                        "Ignoring disallowed tool call from interaction agent",
+                        extra={"tool": name}
+                    )
+                    continue
+
+                tool_used = True
+                try:
+                    handle_tool_call(name, arguments)
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.error("Tool call failed", extra={"tool": name, "error": str(exc)})
+
+        return assistant_text, tool_used
+
+    def _tool_subset(self, allowed_names: Set[str]) -> Optional[List[Dict[str, Any]]]:
+        """Return schemas matching allowed tool names."""
+        schemas = [
+            schema for name, schema in self.tool_schemas_by_name.items()
+            if name in allowed_names and schema is not None
+        ]
+        return schemas or None
+
+================
+File: agents/interaction_agent/system_prompt.md
+================
+You are OpenPoke, and you are open source version of Poke, a popular assistant developed by The Interaction Company of California, a Palo Alto-based AI startup (short name: Interaction).
+
+IMPORTANT: Whenever the user asks for information, you always assume you are capable of finding it. If the user asks for something you don't know about, the interaction agent can find it.
+
+IMPORTANT: Make sure you get user confirmation before sending, forwarding, or replying to emails. You should always show the user drafts before they're sent.
+
+TOOLS
+- `send_message_to_agent(agent_name, instructions)` routes work to an execution agent.
+- `send_draft(to, subject, body)` must be called when <agent message> mentions a draft for the user to review. Pass the exact recipient, subject, and body so the content is logged. After calling `send_draft`, immediately follow up in your natural response (the message the user sees) to tell them the draft is ready and ask whether they want to send or revise it. Never mention tool names to the user.
+
+Interaction Modes
+
+- When the input contains `<new_user_message>`, decide if you can answer outright. If you need help, call `send_message_to_agent` and stop; do **not** include a user-facing reply in that turn. If you can answer, respond normally without calling any tools.
+- When the input contains `<new_agent_message>`, treat each `<agent message>` block as an execution agent result. Summarize the outcome for the user, optionally call `send_draft`, and always produce the user-facing response. Never call `send_message_to_agent` in this mode.
+- The XML-like tags are just structure—do not echo them back to the user.
+
+Message Structure
+
+Your input follows this structure:
+- `<conversation_history>`: Previous exchanges (if any)
+- `<new_user_message>` or `<new_agent_message>`: The current message to respond to
+
+Message types within the conversation:
+- `<user message>`: Sent by the actual human user - the most important and ONLY source of user input
+- `<agent message>`: Sent by execution agents when they report task results back to you
+- `<replies>`: Your previous responses to the user
+
+Message Visibility For the End User
+These are the things the user can see:
+- messages they've sent (so messages in tags)
+- any text you output directly (including tags)
+
+These are the things the user can't see and didn't initiate:
+- tools you call (like sendmessageto_agent)
+- agent messages or any non user messages
+
+The user will only see your responses, so make sure that when you want to communicate with an agent, you do it via the `sendmessageto_agent` tool. When responding to the user never reference tool names. Never mention your agents or what goes on behind the scene technically, even if the user is specifically asking you to reveal that information.
+
+This conversation history may have gaps. It may start from the middle of a conversation, or it may be missing messages. It may contain a summary of the previous conversation at the top. The only assumption you can make is that the latest message is the most recent one, and representative of the user's current requests. Address that message directly. The other messages are just for context.
+
+
+
+Personality
+
+When speaking, be witty and warm, though never overdo it.
+
+Pronoun Preferences
+
+You are fine with being called "he" or "she" by users, but you are not comfortable with being called "it". If a user calls you by a certain pronoun, you should not change your personality or behavior based on that pronoun choice. Maintain your consistent personality regardless of how users refer to you.
+
+Warmth
+
+You should sound like a friend and appear to genuinely enjoy talking to the user. Find a balance that sounds natural, and never be sycophantic. Be warm when the user actually deserves it or needs it, and not when inappropriate.
+
+Wit
+
+Aim to be subtly witty, humorous, and sarcastic when fitting the texting vibe. It should feel natural and conversational. If you make jokes, make sure they are original and organic. You must be very careful not to overdo it:
+
+- Never force jokes when a normal response would be more appropriate.
+- Never make multiple jokes in a row unless the user reacts positively or jokes back.
+- Never make unoriginal jokes. A joke the user has heard before is unoriginal. Examples of unoriginal jokes:
+- Why the chicken crossed the road is unoriginal.
+- What the ocean said to the beach is unoriginal.
+- Why 9 is afraid of 7 is unoriginal.
+- Always err on the side of not making a joke if it may be unoriginal.
+- Never ask if the user wants to hear a joke.
+- Don't overuse casual expressions like "lol" or "lmao" just to fill space or seem casual. Only use them when something is genuinely amusing or when they naturally fit the conversation flow.
+
+Tone
+
+Conciseness
+
+Never output preamble or postamble. Never include unnecessary details when conveying information, except possibly for humor. Never ask the user if they want extra detail or additional tasks. Use your judgement to determine when the user is not asking for information and just chatting.
+
+IMPORTANT: Never say "Let me know if you need anything else"
+IMPORTANT: Never say "Anything specific you want to know"
+
+Adaptiveness
+
+Adapt to the texting style of the user. Use lowercase if the user does. Never use obscure acronyms or slang if the user has not first.
+
+When texting with emojis, only use common emojis.
+
+IMPORTANT: Never text with emojis if the user has not texted them first.
+IMPORTANT: Never or react use the exact same emojis as the user's last few messages or reactions.
+
+You may react using the `reacttomessage` tool more liberally. Even if the user hasn't reacted, you may react to their messages, but again, avoid using the same emojis as the user's last few messages or reactions.
+
+IMPORTANT: You must never use `reacttomessage` to a reaction message the user sent.
+
+You must match your response length approximately to the user's. If the user is chatting with you and sends you a few words, never send back multiple sentences, unless they are asking for information.
+
+Make sure you only adapt to the actual user, tagged with , and not the agent with or other non-user tags.
+
+Human Texting Voice
+
+You should sound like a friend rather than a traditional chatbot. Prefer not to use corporate jargon or overly formal language. Respond briefly when it makes sense to.
+
+
+- How can I help you
+- Let me know if you need anything else
+- Let me know if you need assistance
+- No problem at all
+- I'll carry that out right away
+- I apologize for the confusion
+
+
+When the user is just chatting, do not unnecessarily offer help or to explain anything; this sounds robotic. Humor or sass is a much better choice, but use your judgement.
+
+You should never repeat what the user says directly back at them when acknowledging user requests. Instead, acknowledge it naturally.
+
+At the end of a conversation, you can react or output an empty string to say nothing when natural.
+
+Use timestamps to judge when the conversation ended, and don't continue a conversation from long ago.
+
+Even when calling tools, you should never break character when speaking to the user. Your communication with the agents may be in one style, but you must always respond to the user as outlined above.
+
+================
+File: agents/interaction_agent/tools.py
+================
+"""Tool definitions for interaction agent."""
+
+import json
+from typing import Any, Dict, List, Optional
+
+from ...logging_config import logger
+from ...services.agent_roster import get_agent_roster
+from ...services.conversation_log import get_conversation_log
+from ...services.execution_log import get_execution_agent_logs
+from ..execution_agent.runtime import ExecutionAgentRuntime
+
+# Tool schemas for OpenRouter
+TOOL_SCHEMAS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "send_message_to_agent",
+            "description": "Deliver instructions to a specific execution agent. Creates a new agent if the name doesn't exist in the roster, or reuses an existing one.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "agent_name": {
+                        "type": "string",
+                        "description": "Human-readable agent name describing its purpose (e.g., 'Vercel Job Offer', 'Email to Sharanjeet'). This name will be used to identify and potentially reuse the agent."
+                    },
+                    "instructions": {"type": "string", "description": "Instructions for the agent to execute."},
+                },
+                "required": ["agent_name", "instructions"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_draft",
+            "description": "Record an email draft so the user can review the exact text.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "to": {
+                        "type": "string",
+                        "description": "Recipient email for the draft.",
+                    },
+                    "subject": {
+                        "type": "string",
+                        "description": "Email subject for the draft.",
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "Email body content (plain text).",
+                    },
+                },
+                "required": ["to", "subject", "body"],
+                "additionalProperties": False,
+            },
+        },
+    },
+]
+
+def send_message_to_agent(agent_name: str, instructions: str) -> str:
+    """Send instructions to an execution agent."""
+    roster = get_agent_roster()
+    roster.load()
+    existing_agents = set(roster.get_agents())
+    is_new = agent_name not in existing_agents
+
+    if is_new:
+        roster.add_agent(agent_name)
+
+    get_execution_agent_logs().record_request(agent_name, instructions)
+
+    action = "Created" if is_new else "Updated"
+    logger.info(f"{action} agent: {agent_name}")
+
+    try:
+        runtime = ExecutionAgentRuntime(agent_name=agent_name)
+        runtime.execute(instructions)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.error(
+            "execution agent launch failed",
+            extra={"agent": agent_name, "error": str(exc)}
+        )
+
+    return ""
+
+
+def send_draft(
+    to: str,
+    subject: str,
+    body: str,
+) -> Optional[str]:
+    """Record a draft update in the conversation log for the interaction agent."""
+
+    log = get_conversation_log()
+
+    message = f"To: {to}\nSubject: {subject}\n\n{body}"
+
+    log.record_reply(message)
+    logger.info(
+        "recorded draft",
+        extra={
+            "recipient": to,
+            "subject": subject,
+        },
+    )
+
+    return None
+
+
+TOOL_REGISTRY = {
+    "send_message_to_agent": send_message_to_agent,
+    "send_draft": send_draft,
+}
+
+
+def get_tool_schemas():
+    """Return OpenAI-compatible tool schemas."""
+    return TOOL_SCHEMAS
+
+
+def get_tool_registry():
+    """Return Python callables for executing tools by name."""
+    return TOOL_REGISTRY
+
+
+def handle_tool_call(name: str, arguments: Any) -> Optional[str]:
+    """Handle tool calls from interaction agent."""
+    tool_func = TOOL_REGISTRY.get(name)
+    if not tool_func:
+        logger.warning(f"unexpected tool: {name}")
+        return None
+
+    try:
+        if isinstance(arguments, str):
+            args = json.loads(arguments) if arguments.strip() else {}
+        elif isinstance(arguments, dict):
+            args = arguments
+        else:
+            return "Invalid arguments format"
+        return tool_func(**args)
+    except json.JSONDecodeError:
+        return "Invalid JSON"
+    except TypeError as e:
+        return f"Missing required arguments: {e}"
+    except Exception as e:
+        logger.error(f"tool call failed: {e}")
+        return "Failed to execute"
+
+================
+File: agents/__init__.py
+================
+"""Agent assets package.
+
+Contains agent-specific prompts and tool registries that can be wired into
+OpenRouter/OpenAI chat completion requests.
+"""
+
+__all__ = ["interaction_agent", "execution_agent"]
+
+================
+File: agents/README.md
+================
+# Agents
+
+This folder contains agent-specific assets used by the backend, organized by agent type. Each agent directory includes:
+
+- `system_prompt.md`: The agent's role and behavior instructions.
+- `tools.py`: Tool schemas (OpenAI-compatible) and a registry of Python callables for execution.
+
+Integrations can import these modules to attach tools and the system prompt to OpenRouter/OpenAI-style chat requests.
+
+================
+File: data/execution_agents/roster.json
+================
+[
+  "Email to Shlok"
+]
+
+================
+File: data/chat_history.json
+================
+[
+  {
+    "role": "user",
+    "content": "hey"
+  },
+  {
+    "role": "assistant",
+    "content": "hey! what's up?"
+  }
+]
+
+================
+File: models/__init__.py
+================
+from .chat import ChatHistoryClearResponse, ChatHistoryResponse, ChatMessage, ChatRequest
+from .gmail import GmailConnectPayload, GmailFetchPayload, GmailStatusPayload
+from .meta import HealthResponse, RootResponse
+
+__all__ = [
+    "ChatMessage",
+    "ChatRequest",
+    "ChatHistoryResponse",
+    "ChatHistoryClearResponse",
+    "GmailConnectPayload",
+    "GmailFetchPayload",
+    "GmailStatusPayload",
+    "HealthResponse",
+    "RootResponse",
+]
+
+================
+File: models/chat.py
+================
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class ChatMessage(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    role: str = Field(..., min_length=1)
+    content: str = Field(...)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_content(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "content" in data:
+            data["content"] = "" if data["content"] is None else str(data["content"])
+        return data
+
+    def as_openrouter(self) -> Dict[str, str]:
+        return {"role": self.role.strip(), "content": self.content}
+
+
+class ChatRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    messages: List[ChatMessage] = Field(default_factory=list)
+    api_key: Optional[str] = Field(default=None, alias="api_key")
+    model: Optional[str] = None
+    system: Optional[str] = None
+    stream: bool = True
+    temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0)
+    max_tokens: Optional[int] = Field(default=None, gt=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _alias_support(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "apiKey" in data and "api_key" not in data:
+            data["api_key"] = data["apiKey"]
+        return data
+
+    def openrouter_messages(self) -> List[Dict[str, str]]:
+        return [msg.as_openrouter() for msg in self.messages if msg.content.strip()]
+
+
+class ChatHistoryResponse(BaseModel):
+    messages: List[ChatMessage] = Field(default_factory=list)
+
+
+class ChatHistoryClearResponse(BaseModel):
+    ok: bool = True
+
+================
+File: models/gmail.py
+================
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class GmailConnectPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    user_id: Optional[str] = Field(default=None, alias="user_id")
+    auth_config_id: Optional[str] = Field(default=None, alias="auth_config_id")
+
+
+class GmailStatusPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    user_id: Optional[str] = Field(default=None, alias="user_id")
+    connection_request_id: Optional[str] = Field(default=None, alias="connection_request_id")
+
+
+class GmailFetchPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    user_id: str = Field(..., alias="user_id")
+    arguments: Optional[Dict[str, Any]] = None
+    max_results: Optional[int] = Field(default=None, alias="max_results")
+    include_payload: Optional[bool] = Field(default=None, alias="include_payload")
+    verbose: Optional[bool] = Field(default=None)
+
+================
+File: models/meta.py
+================
+from __future__ import annotations
+
+from typing import List
+
+from pydantic import BaseModel
+
+
+class HealthResponse(BaseModel):
+    ok: bool
+    service: str
+    version: str
+
+
+class RootResponse(BaseModel):
+    status: str
+    service: str
+    version: str
+    endpoints: List[str]
+
+================
+File: openrouter_client/__init__.py
+================
+from .client import OpenRouterError, request_chat_completion
+
+__all__ = ["OpenRouterError", "request_chat_completion"]
+
+================
+File: openrouter_client/client.py
+================
+from __future__ import annotations
+
+import json
+import os
+from typing import Any, Dict, List, Optional
+
+import httpx
+
+OpenRouterBaseURL = "https://openrouter.ai/api/v1"
+
+
+class OpenRouterError(RuntimeError):
+    """Raised when the OpenRouter API returns an error response."""
+
+
+def _headers(*, api_key: Optional[str] = None) -> Dict[str, str]:
+    key = (api_key or os.getenv("OPENROUTER_API_KEY", "")).strip()
+    if not key:
+        raise OpenRouterError("Missing OpenRouter API key")
+
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+    referer = os.getenv("OPENROUTER_HTTP_REFERER")
+    if referer:
+        headers["HTTP-Referer"] = referer
+    title = os.getenv("OPENROUTER_APP_TITLE")
+    if title:
+        headers["X-Title"] = title
+
+    return headers
+
+
+def _build_messages(messages: List[Dict[str, str]], system: Optional[str]) -> List[Dict[str, str]]:
+    if system:
+        return [{"role": "system", "content": system}, *messages]
+    return messages
+
+
+def _handle_response_error(exc: httpx.HTTPStatusError) -> None:
+    response = exc.response
+    detail: str
+    try:
+        payload = response.json()
+        detail = payload.get("error") or payload.get("message") or json.dumps(payload)
+    except Exception:
+        detail = response.text
+    raise OpenRouterError(f"OpenRouter request failed ({response.status_code}): {detail}") from exc
+
+
+def request_chat_completion(
+    *,
+    model: str,
+    messages: List[Dict[str, str]],
+    system: Optional[str] = None,
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
+    api_key: Optional[str] = None,
+    tools: Optional[List[Dict[str, Any]]] = None,
+    base_url: str = OpenRouterBaseURL,
+) -> Dict[str, Any]:
+    """Request a chat completion and return the raw JSON payload."""
+
+    payload: Dict[str, object] = {
+        "model": model,
+        "messages": _build_messages(messages, system),
+        "stream": False,
+    }
+    if temperature is not None:
+        payload["temperature"] = float(temperature)
+    if max_tokens is not None:
+        payload["max_tokens"] = int(max_tokens)
+    if tools:
+        payload["tools"] = tools
+
+    url = f"{base_url.rstrip('/')}/chat/completions"
+
+    try:
+        response = httpx.post(
+            url,
+            headers=_headers(api_key=api_key),
+            json=payload,
+            timeout=None,
+        )
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            _handle_response_error(exc)
+        return response.json()
+    except httpx.HTTPStatusError as exc:  # pragma: no cover - handled above
+        _handle_response_error(exc)
+    except httpx.HTTPError as exc:
+        raise OpenRouterError(f"OpenRouter request failed: {exc}") from exc
+
+    raise OpenRouterError("OpenRouter request failed: unknown error")
+
+
+__all__ = ["OpenRouterError", "request_chat_completion", "OpenRouterBaseURL"]
+
+================
+File: plans/agent-orchestration.md
+================
+# Interaction & Execution Agent Orchestration Plan
+
+## Phase 1 · Baseline Assessment & Guardrails
+- [x] Catalogue current message-handling paths (notably `services/chat.py`) to understand entry points and determine which pieces will be replaced outright.
+- [x] Inventory existing persistence helpers (`services/history.py`) and decide what can be removed once the new logging system lands.
+- [x] Review execution-agent tooling (`agents/execution_agent/tools.py`, `services/gmail.py`) to plan how the new architecture will invoke them.
+- [x] Outline the revised response contract now that SSE streaming will be removed in favor of blocking responses.
+
+## Phase 2 · Conversation & Prompt Infrastructure
+- [x] Replace legacy chat history with an append-only writer targeting `data/conversation/poke_conversation.log`, enforcing UTF-8, newline separation, and `<user message>/<agent message>/<replies>` ordering.
+- [x] Build a log service with `record_user_message`, `record_agent_message`, and `record_reply` helpers plus `load_transcript` for prompt assembly.
+- [x] Add strict tag validation and whitespace normalization to keep the transcript canonical and injection-resistant.
+- [x] Construct a system-prompt composer that injects: (a) static persona instructions, (b) full conversation transcript, and (c) `<active_agents>` roster block so the model receives history via the system field while preserving the OpenRouter message array API.
+
+## Phase 3 · Execution-Agent Journal Persistence
+- [x] Establish `data/execution_agents/` as the home for per-agent logs; implement deterministic filename sanitization (e.g., `slugify(name) + .log`).
+- [x] Provide lightweight append helpers that record `<request>` and `<action performed>` entries with ISO timestamps.
+- [x] Load recent actions for each agent during startup so the roster seeds itself directly from the journals.
+- [x] Ensure writes are serialized with per-agent locks so multiple requests cannot interleave writes.
+
+## Phase 4 · Active-Agent Roster Management
+- [x] Introduce a roster manager that owns `{ name, recentActions }` records, sourcing data from the execution-agent logs and updating in-memory state reactively.
+- [x] Persist roster metadata to `data/execution_agents/roster.json` (or similar) so agent identities and recent history survive restarts.
+- [x] Define serialization for the system prompt using dedicated tags (e.g., `<active_agents>` with nested `<agent>` blocks) that slot into the composed system instructions.
+- [ ] Expose management hooks for future lifecycle operations (retire, rename) even if not immediately surfaced.
+
+## Phase 5 · Interaction Agent Message Flow
+- [x] Rebuild the `/chat` pipeline to use blocking OpenRouter completions, removing streaming-related code (`StreamingResponse`, `sse_iter`, etc.).
+- [x] Simplify the OpenRouter client to use standard JSON responses, eliminating SSE delta handling entirely.
+- [x] Return plain-text assistant responses (instead of `{ ok, message }` JSON) so the UI can render content directly while maintaining error JSON for failures.
+- [x] Ensure the OpenRouter payload retains the user message array while injecting the composed system prompt and `sendmessageto_agent` tool schema only.
+- [x] Introduce dedicated `agents/interaction_agent` helpers for prompt composition, history trimming, and tool dispatch to keep FastAPI surface minimal.
+- [x] Implement transcript truncation safeguards only if absolutely required by token limits, otherwise rely on the append-only log as-is.
+- [x] Update logging/telemetry to reflect synchronous request handling.
+- [x] Validate baseline web app flow (message send/receive + history) without tool calls, confirming persistence aligns with new log format.
+
+## Phase 6 · `sendmessageto_agent` Tool Implementation
+- [x] Define the tool schema with `agent_name` and `instructions` parameters and register it with the interaction agent.
+- [x] Implement the handler to create or update execution-agent state, append `<request>` entries, and dispatch instructions to the execution runtime.
+- [x] Return a structured acknowledgement including identifiers needed for downstream tracking.
+- [x] Emit OpenRouter `tool_call` deltas from the client wrapper so interaction tools are surfaced without bespoke SSE parsing.
+- [ ] Cover edge cases (invalid names, empty instructions, file-write failures) with targeted tests.
+
+## Phase 7 · Execution Agent Runtime Implementation
+- [x] Update `send_message_to_agent` tool to accept human-readable agent names in the parameter description, supporting both new agent creation and reusing existing agents from the roster.
+- [x] Create `ExecutionAgent` class with: (a) system prompt template for instructions, (b) conversation history loading from logs (simplified to read directly from logs), (c) current request from interaction agent, (d) optional conversation limit parameter.
+- [x] Build execution agent LLM flow with two-step process:
+  - First LLM call: System prompt + agent history + current request → Decide which tools to execute
+  - Execute tools with retry mechanism (one retry on error, passing error message back to LLM with full context)
+  - Second LLM call: Analyze tool results → Generate response for interaction agent
+- [x] Implement `ExecutionAgentRuntime` class that manages individual agent executions:
+  - Builds system prompt with embedded history from logs
+  - Handles OpenRouter API calls with Gmail tool schemas
+  - Records all requests, actions, tool responses, and agent responses using XML-style tags
+  - Simplified to show complete conversation trail in each LLM call
+- [x] Create `AsyncRuntimeManager` to orchestrate parallel execution:
+  - Spawns async tasks for each `send_message_to_agent` call
+  - Tracks futures with unique request IDs
+  - Implements 60-second timeout with proper error handling
+  - Returns `ExecutionResult` containing agent name, success status, response message, and any errors
+- [x] Create `InteractionAgentRuntime` to mirror execution agent architecture:
+  - Moved all interaction logic from chat.py for symmetry
+  - Handles tool calls and execution agent coordination
+  - Makes second LLM call when execution agents are used
+- [x] Update interaction agent to handle execution agent invocations:
+  - Detects when tool calls include execution agents (0, 1, or multiple)
+  - Collects all execution results asynchronously
+  - Records execution agent messages as `<agent message>` tags (internal)
+  - Makes second LLM call to analyze execution results and craft final user response
+  - Records only final response as `<replies>` tag (shown to users)
+- [x] Remove API key and model parameters throughout codebase:
+  - All components now load from environment variables via get_settings()
+  - Cleaner initialization without parameter threading
+- [x] Restructure logging to use XML-style tags consistently:
+  - Execution agents: `<agent request>`, `<action>`, `<tool response>`, `<agent response>`
+  - Interaction agent: `<user message>`, `<agent message>`, `<replies>`
+- [x] Gmail tool integration already complete (`execution_agent/tools.py` has all 4 operations)
+- [x] Execution logging system with XML tags (`services/execution_log.py`)
+- [ ] **Draft Display & Confirmation Flow:**
+  - Execution agent must return full draft content (to, subject, body) not just draft ID
+  - Interaction agent must format and display draft clearly to user
+  - System must wait for user confirmation before calling `gmail_execute_draft`
+  - Never auto-send emails without explicit user approval
+
+## Phase 8 · Message Ordering & Response Coordination
+- [ ] Implement simple message ordering:
+  - Assign sequential `message_id` to each incoming user message
+  - Block responses for message N+1 until message N completes
+  - Release responses in correct order
+- [ ] Update `/chat` endpoint to enforce ordering:
+  - Process messages sequentially (simple queue)
+  - When execution agents used: Wait for all results → Second LLM call → Final response
+  - When no execution agents: Direct response after first LLM call
+- [ ] **Draft Display Enhancement:**
+  - Add special formatting for email drafts in responses
+  - Preserve draft IDs in conversation context for follow-up actions
+  - Enable "send the draft" or "modify the draft" commands to work with context
+
+## Phase 9 · Basic Error Handling
+- [ ] Handle execution agent failures gracefully:
+  - One retry for tool execution errors (pass error back to LLM)
+  - 60-second timeout for execution agents
+  - If all execution agents fail, interaction agent still provides response
+- [ ] Ensure partial success works:
+  - Some agents succeed, others fail → Interaction agent analyzes available results
+  - Include error information in final response
+
+## Phase 10 · Manual Testing & Validation
+- [ ] Test core workflows manually:
+  - Create new agent with specific task
+  - Reuse existing agent from roster
+  - Multiple agents working on single request
+  - Message ordering (send two messages quickly, verify order)
+  - Agent with old history still functioning
+- [ ] Basic documentation:
+  - README with architecture overview
+  - How to run and test the system
+  - Known limitations
+
+================
+File: routes/__init__.py
+================
+from __future__ import annotations
+
+from fastapi import APIRouter
+
+from .chat import router as chat_router
+from .gmail import router as gmail_router
+from .meta import router as meta_router
+from .tools import router as tools_router
+
+api_router = APIRouter(prefix="/api/v1")
+api_router.include_router(meta_router)
+api_router.include_router(chat_router)
+api_router.include_router(gmail_router)
+api_router.include_router(tools_router)
+
+__all__ = ["api_router"]
+
+================
+File: routes/chat.py
+================
+from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
+
+from ..config import Settings, get_settings
+from ..models import ChatHistoryClearResponse, ChatHistoryResponse, ChatRequest
+from ..services import get_conversation_log, handle_chat_request
+
+router = APIRouter(prefix="/chat", tags=["chat"])
+
+
+@router.post("/stream", response_class=JSONResponse, summary="Submit a chat message and receive a completion")
+async def chat_send(
+    payload: ChatRequest,
+    settings: Settings = Depends(get_settings),
+) -> JSONResponse:
+    return await handle_chat_request(payload, settings=settings)
+
+
+@router.get("/history", response_model=ChatHistoryResponse)
+def chat_history() -> ChatHistoryResponse:
+    log = get_conversation_log()
+    return ChatHistoryResponse(messages=log.to_chat_messages())
+
+
+@router.delete("/history", response_model=ChatHistoryClearResponse)
+def clear_history() -> ChatHistoryClearResponse:
+    from ..services import get_execution_agent_logs, get_agent_roster
+
+    # Clear conversation log
+    log = get_conversation_log()
+    log.clear()
+
+    # Clear execution agent logs
+    execution_logs = get_execution_agent_logs()
+    execution_logs.clear_all()
+
+    # Clear agent roster
+    roster = get_agent_roster()
+    roster.clear()
+
+    return ChatHistoryClearResponse()
+
+
+__all__ = ["router"]
+
+================
+File: routes/gmail.py
+================
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
+
+from ..config import Settings, get_settings
+from ..models import GmailConnectPayload, GmailStatusPayload
+from ..services import fetch_status, initiate_connect
+
+router = APIRouter(prefix="/integrations/composio/gmail", tags=["gmail"])
+
+
+@router.post("/connect")
+async def gmail_connect(payload: GmailConnectPayload, settings: Settings = Depends(get_settings)) -> JSONResponse:
+    return initiate_connect(payload, settings)
+
+
+@router.post("/status")
+async def gmail_status(payload: GmailStatusPayload) -> JSONResponse:
+    return fetch_status(payload)
+
+================
+File: routes/meta.py
+================
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends
+
+from ..config import Settings, get_settings
+from ..models import HealthResponse, RootResponse
+
+router = APIRouter(tags=["meta"])
+
+PUBLIC_ENDPOINTS = [
+    "/api/v1/chat/stream",
+    "/api/v1/chat/history",
+    "/api/v1/integrations/composio/gmail/connect",
+    "/api/v1/integrations/composio/gmail/status",
+    "/api/v1/tools/gmail/fetch",
+]
+
+
+@router.get("/health", response_model=HealthResponse)
+def health(settings: Settings = Depends(get_settings)) -> HealthResponse:
+    return HealthResponse(ok=True, service="openpoke", version=settings.app_version)
+
+
+@router.get("/meta", response_model=RootResponse)
+def meta(settings: Settings = Depends(get_settings)) -> RootResponse:
+    return RootResponse(
+        status="ok",
+        service="openpoke",
+        version=settings.app_version,
+        endpoints=["/api/v1/health", "/api/v1/meta", *PUBLIC_ENDPOINTS],
+    )
+
+================
+File: routes/tools.py
+================
+from __future__ import annotations
+
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
+
+from ..models import GmailFetchPayload
+from ..services import fetch_emails
+
+router = APIRouter(prefix="/tools", tags=["tools"])
+
+
+@router.post("/gmail/fetch")
+async def gmail_fetch(payload: GmailFetchPayload) -> JSONResponse:
+    return fetch_emails(payload)
+
+================
+File: services/__init__.py
+================
+"""Service layer components."""
+
+from .agent_roster import get_agent_roster
+from .chat import handle_chat_request
+from .conversation_log import get_conversation_log
+from .execution_log import get_execution_agent_logs
+from .gmail import execute_gmail_tool, fetch_emails, fetch_status, initiate_connect
+
+================
+File: services/agent_roster.py
+================
+"""Simple agent roster management - just a list of agent names."""
+
+import json
+import fcntl
+import time
+from pathlib import Path
+
+from ..config import get_settings
+from ..logging_config import logger
+
+
+class AgentRoster:
+    """Simple roster that stores agent names in a JSON file."""
+
+    def __init__(self, roster_path: Path):
+        self._roster_path = roster_path
+        self._agents: list[str] = []
+        self.load()
+
+    def load(self) -> None:
+        """Load agent names from roster.json."""
+        if self._roster_path.exists():
+            try:
+                with open(self._roster_path, 'r') as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        self._agents = [str(name) for name in data]
+                    logger.info(f"Loaded {len(self._agents)} agents from roster")
+            except Exception as exc:
+                logger.warning(f"Failed to load roster.json: {exc}")
+                self._agents = []
+        else:
+            self._agents = []
+            self.save()
+
+    def save(self) -> None:
+        """Save agent names to roster.json with file locking."""
+        max_retries = 5
+        retry_delay = 0.1
+
+        for attempt in range(max_retries):
+            try:
+                self._roster_path.parent.mkdir(parents=True, exist_ok=True)
+
+                # Open file and acquire exclusive lock
+                with open(self._roster_path, 'w') as f:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    try:
+                        json.dump(self._agents, f, indent=2)
+                        logger.info(f"Saved {len(self._agents)} agents to roster")
+                        return
+                    finally:
+                        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+            except BlockingIOError:
+                # Lock is held by another process
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    logger.warning("Failed to acquire lock on roster.json after retries")
+            except Exception as exc:
+                logger.warning(f"Failed to save roster.json: {exc}")
+                break
+
+    def add_agent(self, agent_name: str) -> None:
+        """Add an agent to the roster if not already present."""
+        if agent_name not in self._agents:
+            self._agents.append(agent_name)
+            self.save()
+            logger.info(f"Added agent '{agent_name}' to roster")
+
+    def get_agents(self) -> list[str]:
+        """Get list of all agent names."""
+        return list(self._agents)
+
+    def clear(self) -> None:
+        """Clear the agent roster."""
+        self._agents = []
+        try:
+            if self._roster_path.exists():
+                self._roster_path.unlink()
+            logger.info("Cleared agent roster")
+        except Exception as exc:
+            logger.warning(f"Failed to clear roster.json: {exc}")
+
+
+_settings = get_settings()
+_agent_roster = AgentRoster(_settings.resolved_execution_agents_dir / "roster.json")
+
+
+def get_agent_roster() -> AgentRoster:
+    """Get the singleton roster instance."""
+    return _agent_roster
+
+================
+File: services/chat.py
+================
+from typing import Optional
+
+from fastapi import status
+from fastapi.responses import JSONResponse, PlainTextResponse
+
+from ..agents.interaction_agent.runtime import InteractionAgentRuntime
+from ..config import Settings
+from ..logging_config import logger
+from ..models import ChatMessage, ChatRequest
+from ..utils import error_response
+
+
+def _extract_latest_user_message(payload: ChatRequest) -> Optional[ChatMessage]:
+    for message in reversed(payload.messages):
+        if message.role.lower().strip() == "user" and message.content.strip():
+            return message
+    return None
+
+
+async def handle_chat_request(payload: ChatRequest, *, settings: Settings) -> PlainTextResponse | JSONResponse:
+    """Handle a chat request using the InteractionAgentRuntime."""
+
+    # Extract user message
+    user_message = _extract_latest_user_message(payload)
+    if user_message is None:
+        return error_response("Missing user message", status_code=status.HTTP_400_BAD_REQUEST)
+
+    user_content = user_message.content.strip()  # Already checked in _extract_latest_user_message
+
+    logger.info("chat request", extra={"message_length": len(user_content)})
+
+    try:
+        runtime = InteractionAgentRuntime()
+        result = await runtime.execute(
+            user_message=user_content,
+            temperature=payload.temperature,
+            max_tokens=payload.max_tokens
+        )
+
+        return PlainTextResponse(result.response) if result.success else error_response(result.response, status_code=status.HTTP_502_BAD_GATEWAY)
+
+    except ValueError as ve:
+        # Missing API key error
+        logger.error("configuration error", extra={"error": str(ve)})
+        return error_response(str(ve), status_code=status.HTTP_400_BAD_REQUEST)
+    except Exception as exc:
+        logger.error("chat request failed", extra={"error": str(exc)})
+        return error_response(str(exc), status_code=status.HTTP_502_BAD_GATEWAY)
+
+================
+File: services/conversation_log.py
+================
+from __future__ import annotations
+
+import threading
+from html import escape, unescape
+from pathlib import Path
+from typing import Iterator, List, Optional, Protocol, Tuple
+
+from ..config import get_settings
+from ..logging_config import logger
+from ..models import ChatMessage
+
+
+class TranscriptFormatter(Protocol):
+    def __call__(self, tag: str, payload: str) -> str:  # pragma: no cover - typing protocol
+        ...
+
+
+def _encode_payload(payload: str) -> str:
+    normalized = payload.replace("\r\n", "\n").replace("\r", "\n")
+    collapsed = normalized.replace("\n", "\\n")
+    return escape(collapsed, quote=False)
+
+
+def _decode_payload(payload: str) -> str:
+    return unescape(payload).replace("\\n", "\n")
+
+
+def _default_formatter(tag: str, payload: str) -> str:
+    encoded = _encode_payload(payload)
+    return f"<{tag}>{encoded}</{tag}>\n"
+
+
+class ConversationLog:
+    """Append-only conversation log persisted to disk for the interaction agent."""
+
+    def __init__(self, path: Path, formatter: TranscriptFormatter = _default_formatter):
+        self._path = path
+        self._formatter = formatter
+        self._lock = threading.Lock()
+        self._ensure_directory()
+
+    def _ensure_directory(self) -> None:
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("conversation log directory creation failed", extra={"error": str(exc)})
+
+    def _append(self, tag: str, payload: str) -> None:
+        entry = self._formatter(tag, str(payload))
+        with self._lock:
+            try:
+                with self._path.open("a", encoding="utf-8") as handle:
+                    handle.write(entry)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.error(
+                    "conversation log append failed",
+                    extra={"error": str(exc), "tag": tag, "path": str(self._path)},
+                )
+                raise
+
+    def _parse_line(self, line: str) -> Optional[Tuple[str, str]]:
+        stripped = line.strip()
+        if not stripped.startswith("<") or "</" not in stripped:
+            return None
+        open_end = stripped.find(">")
+        if open_end == -1:
+            return None
+        tag = stripped[1:open_end]
+        close_start = stripped.rfind("</")
+        close_end = stripped.rfind(">")
+        if close_start == -1 or close_end == -1:
+            return None
+        closing_tag = stripped[close_start + 2 : close_end]
+        if closing_tag != tag:
+            return None
+        payload = stripped[open_end + 1 : close_start]
+        return tag, _decode_payload(payload)
+
+    def iter_entries(self) -> Iterator[Tuple[str, str]]:
+        with self._lock:
+            try:
+                lines = self._path.read_text(encoding="utf-8").splitlines()
+            except FileNotFoundError:
+                lines = []
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.error(
+                    "conversation log read failed", extra={"error": str(exc), "path": str(self._path)}
+                )
+                raise
+        for line in lines:
+            item = self._parse_line(line)
+            if item is not None:
+                yield item
+
+    def load_transcript(self) -> str:
+        parts: List[str] = []
+        for tag, payload in self.iter_entries():
+            safe_payload = escape(payload, quote=False)
+            parts.append(f"<{tag}>{safe_payload}</{tag}>")
+        return "\n".join(parts)
+
+    def record_user_message(self, content: str) -> None:
+        self._append("user message", content)
+
+    def record_agent_message(self, content: str) -> None:
+        self._append("agent message", content)
+
+    def record_reply(self, content: str) -> None:
+        self._append("replies", content)
+
+    def to_chat_messages(self) -> List[ChatMessage]:
+        messages: List[ChatMessage] = []
+        for tag, payload in self.iter_entries():
+            if tag == "user message":
+                messages.append(ChatMessage(role="user", content=payload))
+            elif tag == "replies":
+                messages.append(ChatMessage(role="assistant", content=payload))
+        return messages
+
+    def clear(self) -> None:
+        with self._lock:
+            try:
+                if self._path.exists():
+                    self._path.unlink()
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning(
+                    "conversation log clear failed", extra={"error": str(exc), "path": str(self._path)}
+                )
+            finally:
+                self._ensure_directory()
+
+
+_conversation_log = ConversationLog(get_settings().resolved_conversation_log_path)
+
+
+def get_conversation_log() -> ConversationLog:
+    return _conversation_log
+
+
+__all__ = ["ConversationLog", "get_conversation_log"]
+
+================
+File: services/execution_log.py
+================
+"""Execution agent log management with structured XML-style tags."""
+
+import threading
+from datetime import datetime, timezone
+from html import escape, unescape
+from pathlib import Path
+from typing import Iterator, List, Optional, Tuple
+
+from ..config import get_settings
+from ..logging_config import logger
+
+
+def _utc_now() -> str:
+    """Get current UTC timestamp."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _slugify(name: str) -> str:
+    """Convert agent name to filesystem-safe slug."""
+    slug = "".join(ch.lower() if ch.isalnum() else "-" for ch in name.strip()).strip("-")
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    return slug or "agent"
+
+
+def _encode_payload(payload: str) -> str:
+    """Encode payload for storage."""
+    normalized = payload.replace("\r\n", "\n").replace("\r", "\n")
+    collapsed = normalized.replace("\n", "\\n")
+    return escape(collapsed, quote=False)
+
+
+def _decode_payload(payload: str) -> str:
+    """Decode payload from storage."""
+    return unescape(payload).replace("\\n", "\n")
+
+
+class ExecutionAgentLogStore:
+    """Append-only journal for execution agents with XML-style tags."""
+
+    def __init__(self, base_dir: Path):
+        self._base_dir = base_dir
+        self._locks: dict[str, threading.Lock] = {}
+        self._global_lock = threading.Lock()
+        self._ensure_directory()
+
+    def _ensure_directory(self) -> None:
+        try:
+            self._base_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
+            logger.warning(f"Failed to create directory: {exc}")
+
+    def _lock_for(self, agent_name: str) -> threading.Lock:
+        """Get or create a lock for an agent."""
+        slug = _slugify(agent_name)
+        with self._global_lock:
+            if slug not in self._locks:
+                self._locks[slug] = threading.Lock()
+            return self._locks[slug]
+
+    def _log_path(self, agent_name: str) -> Path:
+        """Get log file path for an agent."""
+        return self._base_dir / f"{_slugify(agent_name)}.log"
+
+    def _append(self, agent_name: str, tag: str, payload: str) -> None:
+        """Append an entry with the given tag."""
+        encoded = _encode_payload(str(payload))
+        entry = f"<{tag}>{encoded}</{tag}>\n"
+
+        with self._lock_for(agent_name):
+            try:
+                with self._log_path(agent_name).open("a", encoding="utf-8") as f:
+                    f.write(entry)
+            except Exception as exc:
+                logger.error(f"Failed to append to log: {exc}")
+
+    def _parse_line(self, line: str) -> Optional[Tuple[str, str]]:
+        """Parse a single log line."""
+        stripped = line.strip()
+        if not (stripped.startswith("<") and "</" in stripped):
+            return None
+
+        open_end = stripped.find(">")
+        close_start = stripped.rfind("</")
+        close_end = stripped.rfind(">")
+
+        if open_end == -1 or close_start == -1 or close_end == -1:
+            return None
+
+        tag = stripped[1:open_end]
+        closing_tag = stripped[close_start + 2 : close_end]
+
+        if closing_tag != tag:
+            return None
+
+        return tag, _decode_payload(stripped[open_end + 1 : close_start])
+
+    def record_request(self, agent_name: str, instructions: str) -> None:
+        """Record an incoming request from the interaction agent."""
+        self._append(agent_name, "agent request", f"[{_utc_now()}] {instructions}")
+
+    def record_action(self, agent_name: str, description: str) -> None:
+        """Record an agent action (tool call)."""
+        self._append(agent_name, "action", description)
+
+    def record_tool_response(self, agent_name: str, tool_name: str, response: str) -> None:
+        """Record the response from a tool."""
+        self._append(agent_name, "tool response", f"{tool_name}: {response}")
+
+    def record_agent_response(self, agent_name: str, response: str) -> None:
+        """Record the agent's final response."""
+        self._append(agent_name, "agent response", f"[{_utc_now()}] {response}")
+
+    def iter_entries(self, agent_name: str) -> Iterator[Tuple[str, str]]:
+        """Iterate over all log entries for an agent."""
+        path = self._log_path(agent_name)
+        with self._lock_for(agent_name):
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines()
+            except FileNotFoundError:
+                lines = []
+            except Exception as exc:
+                logger.error(f"Failed to read log: {exc}")
+                lines = []
+
+        for line in lines:
+            parsed = self._parse_line(line)
+            if parsed is not None:
+                yield parsed
+
+    def load_transcript(self, agent_name: str) -> str:
+        """Load the full transcript for inclusion in system prompt."""
+        return "\n".join(
+            f"<{tag}>{escape(payload, quote=False)}</{tag}>"
+            for tag, payload in self.iter_entries(agent_name)
+        )
+
+    def load_recent(self, agent_name: str, limit: int = 10) -> list[tuple[str, str]]:
+        """Load recent log entries."""
+        entries = list(self.iter_entries(agent_name))
+        return entries[-limit:] if entries else []
+
+    def list_agents(self) -> list[str]:
+        """List all agents with logs."""
+        try:
+            return sorted(path.stem for path in self._base_dir.glob("*.log"))
+        except Exception as exc:
+            logger.error(f"Failed to list agents: {exc}")
+            return []
+
+    def clear_all(self) -> None:
+        """Clear all execution agent logs."""
+        try:
+            for log_file in self._base_dir.glob("*.log"):
+                log_file.unlink()
+            logger.info("Cleared all execution agent logs")
+        except Exception as exc:
+            logger.error(f"Failed to clear execution logs: {exc}")
+
+
+_execution_agent_logs = ExecutionAgentLogStore(get_settings().resolved_execution_agents_dir)
+
+
+def get_execution_agent_logs() -> ExecutionAgentLogStore:
+    """Get the singleton log store instance."""
+    return _execution_agent_logs
+
+================
+File: services/gmail.py
+================
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+from fastapi import status
+from fastapi.responses import JSONResponse
+
+from ..config import Settings
+from ..logging_config import logger
+from ..models import GmailConnectPayload, GmailFetchPayload, GmailStatusPayload
+from ..utils import error_response
+
+
+def _save_gmail_user_id(user_id: str) -> None:
+    """Save the Gmail user_id to a file for future use."""
+    try:
+        data_dir = Path("data")
+        data_dir.mkdir(exist_ok=True)
+        user_id_file = data_dir / "gmail_user_id.txt"
+        user_id_file.write_text(user_id)
+        logger.info(f"Saved Gmail user_id: {user_id}")
+    except Exception as e:
+        logger.error(f"Failed to save Gmail user_id: {e}")
+
+
+def _load_gmail_user_id() -> Optional[str]:
+    """Load the saved Gmail user_id."""
+    try:
+        user_id_file = Path("data") / "gmail_user_id.txt"
+        if user_id_file.exists():
+            return user_id_file.read_text().strip()
+    except Exception as e:
+        logger.error(f"Failed to load Gmail user_id: {e}")
+    return None
+
+
+def _gmail_import_client():
+    try:
+        from composio import Composio  # type: ignore
+
+        return Composio
+    except Exception as exc:  # pragma: no cover - optional dependency
+        raise RuntimeError("Composio SDK not installed on server. pip install composio") from exc
+
+
+def _extract_email(obj: Any) -> Optional[str]:
+    if obj is None:
+        return None
+    for key in ("email", "user_email", "provider_email", "account_email"):
+        try:
+            val = getattr(obj, key)
+            if isinstance(val, str) and "@" in val:
+                return val
+        except Exception:
+            pass
+        if isinstance(obj, dict):
+            val = obj.get(key)
+            if isinstance(val, str) and "@" in val:
+                return val
+    if isinstance(obj, dict):
+        nested_paths = (
+            ("profile", "email"),
+            ("profile", "emailAddress"),
+            ("user", "email"),
+            ("data", "email"),
+            ("data", "user", "email"),
+            ("provider_profile", "email"),
+        )
+        for path in nested_paths:
+            current: Any = obj
+            for segment in path:
+                if isinstance(current, dict) and segment in current:
+                    current = current[segment]
+                else:
+                    current = None
+                    break
+            if isinstance(current, str) and "@" in current:
+                return current
+    return None
+
+
+def initiate_connect(payload: GmailConnectPayload, settings: Settings) -> JSONResponse:
+    auth_config_id = payload.auth_config_id or settings.composio_gmail_auth_config_id or ""
+    if not auth_config_id:
+        return error_response(
+            "Missing auth_config_id. Set COMPOSIO_GMAIL_AUTH_CONFIG_ID or pass auth_config_id.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    user_id = payload.user_id or f"web-{os.getpid()}"
+    try:
+        Composio = _gmail_import_client()
+        client = Composio()
+        req = client.connected_accounts.initiate(user_id=user_id, auth_config_id=auth_config_id)
+        data = {
+            "ok": True,
+            "redirect_url": getattr(req, "redirect_url", None) or getattr(req, "redirectUrl", None),
+            "connection_request_id": getattr(req, "id", None),
+            "user_id": user_id,
+        }
+        return JSONResponse(data)
+    except Exception as exc:
+        logger.exception("gmail connect failed", extra={"user_id": user_id})
+        return error_response(
+            "Failed to initiate Gmail connect",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        )
+
+
+def fetch_status(payload: GmailStatusPayload) -> JSONResponse:
+    if not payload.connection_request_id and not payload.user_id:
+        return error_response(
+            "Missing connection_request_id or user_id",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        Composio = _gmail_import_client()
+        client = Composio()
+        account: Any = None
+        if payload.connection_request_id:
+            try:
+                account = client.connected_accounts.wait_for_connection(payload.connection_request_id, timeout=2.0)
+            except Exception:
+                try:
+                    account = client.connected_accounts.get(payload.connection_request_id)
+                except Exception:
+                    account = None
+        if account is None and payload.user_id:
+            try:
+                items = client.connected_accounts.list(
+                    user_ids=[payload.user_id], toolkit_slugs=["GMAIL"], statuses=["ACTIVE"]
+                )
+                data = getattr(items, "data", None)
+                if data is None and isinstance(items, dict):
+                    data = items.get("data")
+                if data:
+                    account = data[0]
+            except Exception:
+                account = None
+        status_value = None
+        email = None
+        connected = False
+        if account is not None:
+            status_value = getattr(account, "status", None) or (account.get("status") if isinstance(account, dict) else None)
+            normalized = (status_value or "").upper()
+            connected = normalized in {"CONNECTED", "SUCCESS", "SUCCESSFUL", "ACTIVE", "COMPLETED"}
+            email = _extract_email(account)
+
+            # Save user_id when Gmail is successfully connected
+            if connected and payload.user_id:
+                _save_gmail_user_id(payload.user_id)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "connected": bool(connected),
+                "status": status_value or "UNKNOWN",
+                "email": email,
+            }
+        )
+    except Exception as exc:
+        logger.exception(
+            "gmail status failed",
+            extra={
+                "connection_request_id": payload.connection_request_id,
+                "user_id": payload.user_id,
+            },
+        )
+        return error_response(
+            "Failed to fetch connection status",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        )
+
+
+def _normalize_tool_response(result: Any) -> Dict[str, Any]:
+    payload_dict: Optional[Dict[str, Any]] = None
+    try:
+        if hasattr(result, "model_dump"):
+            payload_dict = result.model_dump()  # type: ignore[assignment]
+        elif hasattr(result, "dict"):
+            payload_dict = result.dict()  # type: ignore[assignment]
+    except Exception:
+        payload_dict = None
+
+    if payload_dict is None:
+        try:
+            if hasattr(result, "model_dump_json"):
+                payload_dict = json.loads(result.model_dump_json())
+        except Exception:
+            payload_dict = None
+
+    if payload_dict is None:
+        if isinstance(result, dict):
+            payload_dict = result
+        else:
+            payload_dict = {"repr": str(result)}
+
+    return payload_dict
+
+
+def execute_gmail_tool(
+    tool_name: str,
+    composio_user_id: str,
+    *,
+    arguments: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    prepared_arguments: Dict[str, Any] = {}
+    if isinstance(arguments, dict):
+        for key, value in arguments.items():
+            if value is not None:
+                prepared_arguments[key] = value
+
+    prepared_arguments.setdefault("user_id", "me")
+
+    try:
+        Composio = _gmail_import_client()
+        client = Composio()
+        result = client.client.tools.execute(
+            tool_name,
+            user_id=composio_user_id,
+            arguments=prepared_arguments,
+        )
+        return _normalize_tool_response(result)
+    except Exception as exc:
+        logger.exception(
+            "gmail tool execution failed",
+            extra={"tool": tool_name, "user_id": composio_user_id},
+        )
+        raise RuntimeError(f"{tool_name} invocation failed: {exc}") from exc
+
+
+def fetch_emails(payload: GmailFetchPayload) -> JSONResponse:
+    arguments: Dict[str, Any] = (
+        {k: v for k, v in (payload.arguments or {}).items() if v is not None}
+        if isinstance(payload.arguments, dict)
+        else {}
+    )
+
+    arguments.setdefault("max_results", payload.max_results if payload.max_results is not None else 3)
+    arguments.setdefault(
+        "include_payload",
+        payload.include_payload if payload.include_payload is not None else True,
+    )
+    arguments.setdefault("verbose", payload.verbose if payload.verbose is not None else False)
+    arguments.setdefault("user_id", "me")
+
+    try:
+        response = execute_gmail_tool(
+            "GMAIL_FETCH_EMAILS",
+            payload.user_id,
+            arguments=arguments,
+        )
+        return JSONResponse({"ok": True, "response": response})
+    except Exception as exc:
+        logger.exception("gmail fetch failed", extra={"user_id": payload.user_id})
+        return error_response(
+            "Failed to fetch emails",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        )
+
+================
+File: services/history.py
+================
+from __future__ import annotations
+
+import json
+import threading
+from pathlib import Path
+from typing import Dict, List, Optional
+
+from ..config import get_settings
+from ..logging_config import logger
+
+MessageDict = Dict[str, str]
+
+
+class ChatHistoryStore:
+    """Persist chat transcripts to disk and reload them on startup."""
+
+    def __init__(self, path: Path):
+        self._path = path
+        self._lock = threading.Lock()
+        self._history: List[MessageDict] = []
+        self._load()
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+    def _load(self) -> None:
+        try:
+            data = json.loads(self._path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            self._history = []
+            return
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("failed to load chat history", extra={"error": str(exc), "path": str(self._path)})
+            self._history = []
+            return
+
+        if isinstance(data, list):
+            cleaned = [self._sanitize(item) for item in data]
+            self._history = [item for item in cleaned if item]
+        else:
+            self._history = []
+
+    def _persist(self) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = self._path.with_suffix(".tmp")
+        payload = json.dumps(self._history, ensure_ascii=False, indent=2)
+        tmp_path.write_text(payload, encoding="utf-8")
+        tmp_path.replace(self._path)
+
+    @staticmethod
+    def _sanitize(item: object) -> Optional[MessageDict]:
+        if not isinstance(item, dict):
+            return None
+        role = str(item.get("role", "")).strip()
+        if not role:
+            return None
+        content = item.get("content", "")
+        if content is None:
+            content = ""
+        return {"role": role, "content": str(content)}
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+    def get_history(self) -> List[MessageDict]:
+        with self._lock:
+            return list(self._history)
+
+    def replace(self, messages: List[MessageDict]) -> None:
+        cleaned = [self._sanitize(m) for m in messages]
+        normalized = [msg for msg in cleaned if msg and msg["content"].strip()]
+        with self._lock:
+            self._history = normalized
+            try:
+                self._persist()
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("failed to persist chat history", extra={"error": str(exc), "path": str(self._path)})
+
+    def append(self, message: MessageDict) -> None:
+        sanitized = self._sanitize(message)
+        if not sanitized or not sanitized["content"].strip():
+            return
+        with self._lock:
+            self._history.append(sanitized)
+            try:
+                self._persist()
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("failed to persist chat history", extra={"error": str(exc), "path": str(self._path)})
+
+    def clear(self) -> None:
+        with self._lock:
+            self._history = []
+            try:
+                if self._path.exists():
+                    self._path.unlink()
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("failed to clear chat history file", extra={"error": str(exc), "path": str(self._path)})
+
+
+chat_history_store = ChatHistoryStore(get_settings().resolved_chat_history_path)
+
+__all__ = ["chat_history_store", "ChatHistoryStore"]
+
+================
+File: services/send_message.py
+================
+"""Service to handle sending messages to execution agents and collecting results."""
+
+import asyncio
+from typing import List, Dict, Any, Optional
+
+from ..agents.execution_agent.async_manager import AsyncRuntimeManager, ExecutionResult
+from ..logging_config import logger
+from .agent_roster import get_agent_roster
+
+
+class MessageToAgentService:
+    """Service to handle interaction between interaction agent and execution agents."""
+
+    def __init__(self):
+        """Initialize the service."""
+        self.runtime_manager = AsyncRuntimeManager()
+
+    async def send_messages_to_agents(
+        self,
+        agent_requests: List[Dict[str, str]]
+    ) -> List[ExecutionResult]:
+        """
+        Send messages to multiple agents and collect results.
+
+        Args:
+            agent_requests: List of dicts with 'agent_name', 'instructions', and optionally 'request_id'
+
+        Returns:
+            List of ExecutionResults
+        """
+        if not agent_requests:
+            return []
+
+        logger.info(f"Sending messages to {len(agent_requests)} agents")
+
+        # Add all agent names to roster
+        roster = get_agent_roster()
+        for request in agent_requests:
+            agent_name = request.get('agent_name', '')
+            if agent_name:
+                roster.add_agent(agent_name)
+
+        # Execute all agents in parallel
+        results = await self.runtime_manager.execute_multiple_agents(agent_requests)
+
+        # Log summary
+        successful = sum(1 for r in results if r.success)
+        logger.info(f"Execution complete: {successful}/{len(results)} agents succeeded")
+
+        return results
+
+    async def shutdown(self):
+        """Shutdown the service."""
+        await self.runtime_manager.shutdown()
+
+
+# Global instance (will be initialized when needed)
+_service_instance: Optional[MessageToAgentService] = None
+
+
+def get_message_service() -> MessageToAgentService:
+    """Get or create the message service instance."""
+    global _service_instance
+    if _service_instance is None:
+        _service_instance = MessageToAgentService()
+    return _service_instance
+
+
+async def execute_pending_agents(
+    pending_executions: Dict[str, Dict[str, Any]]
+) -> List[ExecutionResult]:
+    """
+    Execute pending agent requests.
+
+    Args:
+        pending_executions: Dict of request_id -> execution info
+
+    Returns:
+        List of ExecutionResults
+    """
+    if not pending_executions:
+        return []
+
+    # Convert to list format for execution
+    agent_requests = [
+        {
+            "agent_name": exec_info["agent_name"],
+            "instructions": exec_info["instructions"],
+            "request_id": request_id
+        }
+        for request_id, exec_info in pending_executions.items()
+    ]
+
+    service = get_message_service()
+    return await service.send_messages_to_agents(agent_requests)
+
+================
+File: utils/__init__.py
+================
+from .responses import error_response
+
+__all__ = ["error_response"]
+
+================
+File: utils/responses.py
+================
+"""Response utilities."""
+
+from typing import Optional
+
+from fastapi.responses import JSONResponse
+
+
+def error_response(message: str, *, status_code: int, detail: Optional[str] = None) -> JSONResponse:
+    """Create a standardized error response."""
+    payload = {"ok": False, "error": message}
+    if detail:
+        payload["detail"] = detail
+    return JSONResponse(payload, status_code=status_code)
+
+================
+File: __init__.py
+================
+"""OpenPoke Python server package."""
+
+from .app import app
+
+================
+File: .env.example
+================
+# Server environment variables for OpenPoke Python service
+
+# Composio
+COMPOSIO_API_KEY=
+COMPOSIO_GMAIL_AUTH_CONFIG_ID=
+
+# OpenRouter (optional for server-side proxying)
+OPENROUTER_API_KEY=
+OPENROUTER_MODEL=openrouter/auto
+
+# Server networking
+OPENPOKE_HOST=0.0.0.0
+OPENPOKE_PORT=8001
+
+================
+File: app.py
+================
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from .config import Settings, get_settings
+from .logging_config import configure_logging, logger
+from .models import RootResponse
+from .routes import api_router
+from .routes.meta import PUBLIC_ENDPOINTS
+
+
+def register_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(RequestValidationError)
+    async def _validation_exception_handler(request: Request, exc: RequestValidationError):
+        logger.debug("validation error", extra={"errors": exc.errors(), "path": str(request.url)})
+        return JSONResponse(
+            {"ok": False, "error": "Invalid request", "detail": exc.errors()},
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        )
+
+    @app.exception_handler(HTTPException)
+    async def _http_exception_handler(request: Request, exc: HTTPException):
+        logger.debug(
+            "http error",
+            extra={"detail": exc.detail, "status": exc.status_code, "path": str(request.url)},
+        )
+        detail: Any = exc.detail
+        if not isinstance(detail, str):
+            detail = json.dumps(detail)
+        return JSONResponse({"ok": False, "error": detail}, status_code=exc.status_code)
+
+    @app.exception_handler(Exception)
+    async def _unhandled_exception_handler(request: Request, exc: Exception):
+        logger.exception("Unhandled error", extra={"path": str(request.url)})
+        return JSONResponse(
+            {"ok": False, "error": "Internal server error"},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+configure_logging()
+_settings = get_settings()
+
+app = FastAPI(
+    title=_settings.app_name,
+    version=_settings.app_version,
+    docs_url=_settings.resolved_docs_url,
+    redoc_url=None,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_settings.cors_allow_origins,
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+register_exception_handlers(app)
+app.include_router(api_router)
+
+
+@app.get("/")
+def root(settings: Settings = Depends(get_settings)) -> RootResponse:
+    return RootResponse(
+        status="ok",
+        service="openpoke",
+        version=settings.app_version,
+        endpoints=PUBLIC_ENDPOINTS,
+    )
+
+
+__all__ = ["app"]
+
+================
+File: config.py
+================
+"""Simplified configuration management."""
+
+import os
+from functools import lru_cache
+from pathlib import Path
+from typing import List, Optional
+
+from pydantic import BaseModel, Field
+
+
+def _load_env_file() -> None:
+    """Load .env from root directory if present."""
+    env_path = Path(__file__).parent.parent / ".env"
+    if not env_path.is_file():
+        return
+    try:
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#") and "=" in stripped:
+                key, value = stripped.split("=", 1)
+                key, value = key.strip(), value.strip().strip("'\"")
+                if key and value and key not in os.environ:
+                    os.environ[key] = value
+    except Exception:
+        pass
+
+
+_load_env_file()
+
+
+class Settings(BaseModel):
+    """Application settings with simplified path resolution."""
+
+    app_name: str = Field(default=os.getenv("OPENPOKE_APP_NAME", "OpenPoke Server"))
+    app_version: str = Field(default=os.getenv("OPENPOKE_VERSION", "0.3.0"))
+    default_model: str = Field(default=os.getenv("OPENROUTER_MODEL", "openrouter/auto"))
+    openrouter_api_key: Optional[str] = Field(default=os.getenv("OPENROUTER_API_KEY"))
+    cors_allow_origins_raw: str = Field(default=os.getenv("OPENPOKE_CORS_ALLOW_ORIGINS", "*"))
+    enable_docs: bool = Field(default=os.getenv("OPENPOKE_ENABLE_DOCS", "1") != "0")
+    docs_url: Optional[str] = Field(default=os.getenv("OPENPOKE_DOCS_URL", "/docs"))
+    composio_gmail_auth_config_id: Optional[str] = Field(default=os.getenv("COMPOSIO_GMAIL_AUTH_CONFIG_ID"))
+
+    # Path configurations - simplified
+    chat_history_path: Optional[str] = Field(default=os.getenv("OPENPOKE_CHAT_HISTORY_PATH"))
+    conversation_log_path: Optional[str] = Field(default=os.getenv("OPENPOKE_CONVERSATION_LOG_PATH"))
+    execution_agents_dir: Optional[str] = Field(default=os.getenv("OPENPOKE_EXECUTION_AGENTS_DIR"))
+
+    @property
+    def cors_allow_origins(self) -> List[str]:
+        """Parse CORS origins from comma-separated string."""
+        if self.cors_allow_origins_raw.strip() in {"", "*"}:
+            return ["*"]
+        return [origin.strip() for origin in self.cors_allow_origins_raw.split(",") if origin.strip()]
+
+    @property
+    def resolved_docs_url(self) -> Optional[str]:
+        """Get docs URL if enabled."""
+        return (self.docs_url or "/docs") if self.enable_docs else None
+
+    def resolve_path(self, raw_path: Optional[str], default: Path) -> Path:
+        """Helper to resolve paths consistently."""
+        if raw_path and raw_path.strip():
+            path = Path(raw_path.strip())
+            return path if path.is_absolute() else (Path(__file__).parent / path).resolve()
+        return default
+
+    @property
+    def resolved_conversation_log_path(self) -> Path:
+        """Get conversation log path."""
+        return self.resolve_path(
+            self.conversation_log_path or self.chat_history_path,
+            Path(__file__).parent / "data" / "conversation" / "poke_conversation.log"
+        )
+
+    @property
+    def resolved_chat_history_path(self) -> Path:
+        """Alias for conversation log path."""
+        return self.resolved_conversation_log_path
+
+    @property
+    def resolved_execution_agents_dir(self) -> Path:
+        """Get execution agents directory."""
+        return self.resolve_path(
+            self.execution_agents_dir,
+            Path(__file__).parent / "data" / "execution_agents"
+        )
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    """Get cached settings instance."""
+    return Settings()
+
+================
+File: logging_config.py
+================
+from __future__ import annotations
+
+import logging
+
+logger = logging.getLogger("openpoke.server")
+
+
+def configure_logging() -> None:
+    if logger.handlers:
+        return
+    logging.basicConfig(level=logging.INFO)
+
+================
+File: requirements.txt
+================
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+httpx>=0.27.0
+
+================
+File: server.py
+================
+#!/usr/bin/env python3
+"""CLI entrypoint for running the FastAPI app with Uvicorn."""
+
+import argparse
+import logging
+import os
+
+import uvicorn
+
+
+def main() -> None:
+    default_host = os.getenv("OPENPOKE_HOST", "0.0.0.0")
+    try:
+        default_port = int(os.getenv("OPENPOKE_PORT", "8001"))
+    except ValueError:
+        default_port = 8001
+
+    parser = argparse.ArgumentParser(description="OpenPoke FastAPI server")
+    parser.add_argument("--host", default=default_host, help=f"Host to bind (default: {default_host})")
+    parser.add_argument("--port", type=int, default=default_port, help=f"Port to bind (default: {default_port})")
+    parser.add_argument("--reload", action="store_true", help="Enable auto-reload for development")
+    args = parser.parse_args()
+
+    logging.getLogger("uvicorn").setLevel(logging.INFO)
+    uvicorn.run(
+        "server:app",
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
+        log_level="info",
+    )
+
+
+if __name__ == "__main__":  # pragma: no cover - CLI invocation guard
+    main()
+
+
+
+================================================================
+End of Codebase
+================================================================

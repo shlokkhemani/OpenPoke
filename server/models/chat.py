@@ -30,8 +30,6 @@ class ChatRequest(BaseModel):
     model: Optional[str] = None
     system: Optional[str] = None
     stream: bool = True
-    temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0)
-    max_tokens: Optional[int] = Field(default=None, gt=0)
 
     @model_validator(mode="before")
     @classmethod

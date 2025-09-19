@@ -31,11 +31,7 @@ async def handle_chat_request(payload: ChatRequest, *, settings: Settings) -> Pl
 
     try:
         runtime = InteractionAgentRuntime()
-        result = await runtime.execute(
-            user_message=user_content,
-            temperature=payload.temperature,
-            max_tokens=payload.max_tokens
-        )
+        result = await runtime.execute(user_message=user_content)
 
         return PlainTextResponse(result.response) if result.success else error_response(result.response, status_code=status.HTTP_502_BAD_GATEWAY)
 

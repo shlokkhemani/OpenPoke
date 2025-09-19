@@ -56,8 +56,6 @@ def request_chat_completion(
     model: str,
     messages: List[Dict[str, str]],
     system: Optional[str] = None,
-    temperature: Optional[float] = None,
-    max_tokens: Optional[int] = None,
     api_key: Optional[str] = None,
     tools: Optional[List[Dict[str, Any]]] = None,
     base_url: str = OpenRouterBaseURL,
@@ -69,10 +67,6 @@ def request_chat_completion(
         "messages": _build_messages(messages, system),
         "stream": False,
     }
-    if temperature is not None:
-        payload["temperature"] = float(temperature)
-    if max_tokens is not None:
-        payload["max_tokens"] = int(max_tokens)
     if tools:
         payload["tools"] = tools
 

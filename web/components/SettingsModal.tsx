@@ -4,16 +4,18 @@ import { useCallback, useEffect, useState } from 'react';
 export type Settings = {
   apiKey: string;
   model: string;
+  timezone: string;
 };
 
 export function useSettings() {
-  const [settings, setSettings] = useState<Settings>({ apiKey: '', model: 'openrouter/auto' });
+  const [settings, setSettings] = useState<Settings>({ apiKey: '', model: 'openrouter/auto', timezone: '' });
 
   useEffect(() => {
     try {
       const apiKey = localStorage.getItem('openrouter_api_key') || '';
       const model = localStorage.getItem('openrouter_model') || 'openrouter/auto';
-      setSettings({ apiKey, model });
+      const timezone = localStorage.getItem('user_timezone') || '';
+      setSettings({ apiKey, model, timezone });
     } catch {}
   }, []);
 
@@ -22,6 +24,7 @@ export function useSettings() {
     try {
       localStorage.setItem('openrouter_api_key', s.apiKey);
       localStorage.setItem('openrouter_model', s.model);
+      localStorage.setItem('user_timezone', s.timezone);
     } catch {}
   }, []);
 
@@ -41,6 +44,7 @@ export default function SettingsModal({
 }) {
   const [apiKey, setApiKey] = useState(settings.apiKey);
   const [model, setModel] = useState(settings.model);
+  const [timezone, setTimezone] = useState(settings.timezone);
   const [connectingGmail, setConnectingGmail] = useState(false);
   const [gmailStatus, setGmailStatus] = useState<string>("");
   const [gmailConnected, setGmailConnected] = useState<boolean>(false);
@@ -138,6 +142,7 @@ export default function SettingsModal({
   useEffect(() => {
     setApiKey(settings.apiKey);
     setModel(settings.model);
+    setTimezone(settings.timezone);
   }, [settings]);
 
   if (!open) return null;
@@ -172,6 +177,20 @@ export default function SettingsModal({
               onChange={(e) => setModel(e.target.value)}
               placeholder="e.g. openrouter/auto or anthropic/claude-3.5-sonnet"
             />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">Timezone</label>
+            <input
+              className="input"
+              type="text"
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              placeholder="e.g. America/New_York, Europe/London"
+              readOnly={!timezone}
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              {timezone ? 'Auto-detected from browser. Edit to override.' : 'Will be auto-detected on next page load.'}
+            </p>
           </div>
           <div className="pt-2">
             <div className="mb-1 text-sm font-medium text-gray-700">Integrations</div>
@@ -212,7 +231,7 @@ export default function SettingsModal({
           <button
             className="btn"
             onClick={() => {
-              onSave({ apiKey, model });
+              onSave({ apiKey, model, timezone });
               onClose();
             }}
           >

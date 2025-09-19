@@ -203,10 +203,6 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                         "type": "string",
                         "description": "ISO 8601 start time for the first firing. Defaults to now if omitted.",
                     },
-                    "timezone": {
-                        "type": "string",
-                        "description": "IANA timezone name for interpreting the recurrence (defaults to UTC).",
-                    },
                     "status": {
                         "type": "string",
                         "description": "Initial status; usually 'active' or 'paused'.",
@@ -240,10 +236,6 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
                     "start_time": {
                         "type": "string",
                         "description": "New ISO 8601 start time for the schedule (optional).",
-                    },
-                    "timezone": {
-                        "type": "string",
-                        "description": "Updated timezone identifier (optional).",
                     },
                     "status": {
                         "type": "string",
@@ -403,10 +395,9 @@ def _create_trigger_tool(
     payload: str,
     recurrence_rule: Optional[str] = None,
     start_time: Optional[str] = None,
-    timezone: Optional[str] = None,
     status: Optional[str] = None,
 ) -> Dict[str, Any]:
-    timezone_value = (timezone or "").strip() or get_timezone_store().get_timezone()
+    timezone_value = get_timezone_store().get_timezone()
     summary_args = {
         "recurrence_rule": recurrence_rule,
         "start_time": start_time,
@@ -450,7 +441,6 @@ def _update_trigger_tool(
     payload: Optional[str] = None,
     recurrence_rule: Optional[str] = None,
     start_time: Optional[str] = None,
-    timezone: Optional[str] = None,
     status: Optional[str] = None,
 ) -> Dict[str, Any]:
     try:
@@ -459,7 +449,7 @@ def _update_trigger_tool(
         return {"error": "trigger_id must be an integer"}
 
     try:
-        timezone_value = (timezone or "").strip() or None
+        timezone_value = get_timezone_store().get_timezone()
         record = _TRIGGER_SERVICE.update_trigger(
             trigger_id_int,
             agent_name=agent_name,

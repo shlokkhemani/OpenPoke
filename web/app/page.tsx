@@ -53,6 +53,35 @@ export default function Page() {
     void loadHistory();
   }, [loadHistory]);
 
+  // Detect and store browser timezone on first load
+  useEffect(() => {
+    const detectAndStoreTimezone = async () => {
+      // Only run if timezone not already stored
+      if (settings.timezone) return;
+      
+      try {
+        const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        
+        // Send to server
+        const response = await fetch('/api/timezone', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ timezone: browserTimezone }),
+        });
+        
+        if (response.ok) {
+          // Update local settings
+          setSettings({ ...settings, timezone: browserTimezone });
+        }
+      } catch (error) {
+        // Fail silently - timezone detection is not critical
+        console.debug('Timezone detection failed:', error);
+      }
+    };
+
+    void detectAndStoreTimezone();
+  }, [settings, setSettings]);
+
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {

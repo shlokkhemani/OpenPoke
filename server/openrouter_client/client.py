@@ -51,7 +51,7 @@ def _handle_response_error(exc: httpx.HTTPStatusError) -> None:
     raise OpenRouterError(f"OpenRouter request failed ({response.status_code}): {detail}") from exc
 
 
-def request_chat_completion(
+async def request_chat_completion(
     *,
     model: str,
     messages: List[Dict[str, str]],
@@ -72,22 +72,23 @@ def request_chat_completion(
 
     url = f"{base_url.rstrip('/')}/chat/completions"
 
-    try:
-        response = httpx.post(
-            url,
-            headers=_headers(api_key=api_key),
-            json=payload,
-            timeout=None,
-        )
+    async with httpx.AsyncClient() as client:
         try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
+            response = await client.post(
+                url,
+                headers=_headers(api_key=api_key),
+                json=payload,
+                timeout=60.0,  # Set reasonable timeout instead of None
+            )
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                _handle_response_error(exc)
+            return response.json()
+        except httpx.HTTPStatusError as exc:  # pragma: no cover - handled above
             _handle_response_error(exc)
-        return response.json()
-    except httpx.HTTPStatusError as exc:  # pragma: no cover - handled above
-        _handle_response_error(exc)
-    except httpx.HTTPError as exc:
-        raise OpenRouterError(f"OpenRouter request failed: {exc}") from exc
+        except httpx.HTTPError as exc:
+            raise OpenRouterError(f"OpenRouter request failed: {exc}") from exc
 
     raise OpenRouterError("OpenRouter request failed: unknown error")
 

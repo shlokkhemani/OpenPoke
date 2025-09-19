@@ -38,7 +38,7 @@ class ExecutionAgentRuntime:
         if not self.api_key:
             raise ValueError("OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.")
 
-    def execute(self, instructions: str) -> ExecutionResult:
+    async def execute(self, instructions: str) -> ExecutionResult:
         """Execute the agent with given instructions."""
         try:
             # Build system prompt with history
@@ -53,7 +53,7 @@ class ExecutionAgentRuntime:
                 logger.info(
                     f"Execution agent {self.agent.name}: requesting plan (iteration {iteration + 1})"
                 )
-                response = self._make_llm_call(system_prompt, messages, with_tools=True)
+                response = await self._make_llm_call(system_prompt, messages, with_tools=True)
                 assistant_message = response.get("choices", [{}])[0].get("message", {})
 
                 if not assistant_message:
@@ -149,11 +149,11 @@ class ExecutionAgentRuntime:
                 error=error_msg
             )
 
-    def _make_llm_call(self, system_prompt: str, messages: List[Dict], with_tools: bool) -> Dict:
+    async def _make_llm_call(self, system_prompt: str, messages: List[Dict], with_tools: bool) -> Dict:
         """Make an LLM call."""
         tools_to_send = self.tool_schemas if with_tools else None
         logger.info(f"Execution agent calling with model: {self.model}, tools: {len(tools_to_send) if tools_to_send else 0}")
-        return request_chat_completion(
+        return await request_chat_completion(
             model=self.model,
             messages=messages,
             system=system_prompt,

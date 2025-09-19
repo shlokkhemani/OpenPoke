@@ -66,19 +66,11 @@ class AsyncRuntimeManager:
         try:
             logger.info(f"Starting execution for agent {agent_name} (request {request_id})")
 
-            # Run execution in thread pool (since OpenRouter client is sync)
-            loop = asyncio.get_event_loop()
-            future = loop.run_in_executor(
-                self._executor,
-                self._execute_agent_sync,
-                agent_name,
-                instructions
+            # Run execution asynchronously
+            result = await asyncio.wait_for(
+                self._execute_agent_async(agent_name, instructions),
+                timeout=self.timeout_seconds
             )
-
-            pending.future = future
-
-            # Wait with timeout
-            result = await asyncio.wait_for(future, timeout=self.timeout_seconds)
 
             logger.info(f"Completed execution for agent {agent_name} (request {request_id})")
             return result
@@ -151,10 +143,10 @@ class AsyncRuntimeManager:
         else:
             return []
 
-    def _execute_agent_sync(self, agent_name: str, instructions: str) -> ExecutionResult:
-        """Synchronous execution of an agent (runs in thread pool)."""
+    async def _execute_agent_async(self, agent_name: str, instructions: str) -> ExecutionResult:
+        """Asynchronous execution of an agent."""
         runtime = ExecutionAgentRuntime(agent_name=agent_name)
-        return runtime.execute(instructions)
+        return await runtime.execute(instructions)
 
     async def _create_error_result(self, agent_name: str, error: str) -> ExecutionResult:
         """Create an error result."""

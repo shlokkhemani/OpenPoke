@@ -23,13 +23,17 @@ def main() -> None:
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload for development")
     args = parser.parse_args()
 
+    # Reduce uvicorn access log noise - only show warnings and errors
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("uvicorn").setLevel(logging.INFO)
+    
     uvicorn.run(
         app,
         host=args.host,
         port=args.port,
         reload=args.reload,
         log_level="info",
+        access_log=False,  # Disable access logs completely for cleaner output
     )
 
 

@@ -207,7 +207,7 @@ class InteractionAgentRuntime:
             "Interaction agent calling LLM",
             extra={"model": self.model, "tools": len(self.tool_schemas)},
         )
-        return request_chat_completion(
+        return await request_chat_completion(
             model=self.model,
             messages=messages,
             system=system_prompt,

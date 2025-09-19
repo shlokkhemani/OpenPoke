@@ -1,5 +1,6 @@
 """Tool definitions for interaction agent."""
 
+import asyncio
 import json
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -8,7 +9,7 @@ from ...logging_config import logger
 from ...services.agent_roster import get_agent_roster
 from ...services.conversation_log import get_conversation_log
 from ...services.execution_log import get_execution_agent_logs
-from ..execution_agent.runtime import ExecutionAgentRuntime
+from ..execution_agent.async_manager import AsyncRuntimeManager
 
 
 @dataclass
@@ -102,9 +103,30 @@ def send_message_to_agent(agent_name: str, instructions: str) -> ToolResult:
     action = "Created" if is_new else "Updated"
     logger.info(f"{action} agent: {agent_name}")
 
+    # Execute asynchronously using the async manager
     try:
-        runtime = ExecutionAgentRuntime(agent_name=agent_name)
-        runtime.execute(instructions)
+        async_manager = AsyncRuntimeManager()
+        
+        # Create a fire-and-forget task for the execution
+        async def _execute_async():
+            try:
+                result = await async_manager.execute_agent(agent_name, instructions)
+                logger.info(f"Agent {agent_name} execution completed: {result.success}")
+            except Exception as exc:
+                logger.error(
+                    "execution agent failed",
+                    extra={"agent": agent_name, "error": str(exc)}
+                )
+        
+        # Schedule the async execution
+        try:
+            loop = asyncio.get_event_loop()
+            loop.create_task(_execute_async())
+        except RuntimeError:
+            # No event loop, this shouldn't happen in the interaction agent context
+            logger.error("No event loop available for async execution")
+            return ToolResult(success=False, payload={"error": "No event loop available"})
+                
     except Exception as exc:  # pragma: no cover - defensive
         logger.error(
             "execution agent launch failed",

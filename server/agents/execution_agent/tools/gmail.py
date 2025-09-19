@@ -51,10 +51,6 @@ _SCHEMAS: List[Dict[str, Any]] = [
                         "type": "string",
                         "description": "Existing Gmail thread id if this draft belongs to a thread.",
                     },
-                    "user_id": {
-                        "type": "string",
-                        "description": "Override Gmail user id if not 'me'.",
-                    },
                     "attachment": {
                         "type": "object",
                         "description": "Single attachment metadata (requires Composio-uploaded asset).",
@@ -83,10 +79,6 @@ _SCHEMAS: List[Dict[str, Any]] = [
                         "type": "string",
                         "description": "Identifier of the Gmail draft to send.",
                     },
-                    "user_id": {
-                        "type": "string",
-                        "description": "Override Gmail user id if not 'me'.",
-                    },
                 },
                 "required": ["draft_id"],
                 "additionalProperties": False,
@@ -112,10 +104,6 @@ _SCHEMAS: List[Dict[str, Any]] = [
                     "additional_text": {
                         "type": "string",
                         "description": "Optional text to prepend when forwarding.",
-                    },
-                    "user_id": {
-                        "type": "string",
-                        "description": "Override Gmail user id if not 'me'.",
                     },
                 },
                 "required": ["message_id", "recipient_email"],
@@ -172,12 +160,197 @@ _SCHEMAS: List[Dict[str, Any]] = [
                         },
                         "required": ["s3key", "name", "mimetype"],
                     },
-                    "user_id": {
-                        "type": "string",
-                        "description": "Override Gmail user id if not 'me'.",
-                    },
                 },
                 "required": ["thread_id", "recipient_email", "message_body"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "gmail_delete_draft",
+            "description": "Delete a specific Gmail draft using the Composio Gmail integration.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "draft_id": {
+                        "type": "string",
+                        "description": "Identifier of the Gmail draft to delete.",
+                    },
+                },
+                "required": ["draft_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "gmail_fetch_emails",
+            "description": "Fetch Gmail messages with optional filters and verbosity controls via Composio.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Optional Gmail search query string (same syntax as Gmail UI).",
+                    },
+                    "label_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Filter results to specific Gmail label ids.",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum number of messages to return.",
+                    },
+                    "page_token": {
+                        "type": "string",
+                        "description": "Pagination token returned from a previous fetch.",
+                    },
+                    "ids_only": {
+                        "type": "boolean",
+                        "description": "Return only message ids instead of full payloads when true.",
+                    },
+                    "include_payload": {
+                        "type": "boolean",
+                        "description": "Include full message payload data when true.",
+                    },
+                    "include_spam_trash": {
+                        "type": "boolean",
+                        "description": "Include spam and trash messages when true.",
+                    },
+                    "verbose": {
+                        "type": "boolean",
+                        "description": "Request verbose output with parsed headers and bodies when true.",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "gmail_get_contacts",
+            "description": "Retrieve Google contacts (connections) available to the authenticated Gmail account.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "resource_name": {
+                        "type": "string",
+                        "description": "Resource name to read contacts from, defaults to people/me.",
+                    },
+                    "person_fields": {
+                        "type": "string",
+                        "description": "Comma-separated People API fields to include (e.g. emailAddresses,names).",
+                    },
+                    "include_other_contacts": {
+                        "type": "boolean",
+                        "description": "Include other contacts (directory suggestions) when true.",
+                    },
+                    "page_token": {
+                        "type": "string",
+                        "description": "Pagination token for retrieving the next page of contacts.",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "gmail_get_people",
+            "description": "Retrieve detailed Google People records or other contacts via Composio.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "resource_name": {
+                        "type": "string",
+                        "description": "Resource name to fetch (defaults to people/me).",
+                    },
+                    "person_fields": {
+                        "type": "string",
+                        "description": "Comma-separated People API fields to include in the response.",
+                    },
+                    "page_size": {
+                        "type": "integer",
+                        "description": "Maximum number of people records to return per page.",
+                    },
+                    "page_token": {
+                        "type": "string",
+                        "description": "Token to continue fetching the next set of results.",
+                    },
+                    "sync_token": {
+                        "type": "string",
+                        "description": "Sync token for incremental sync requests.",
+                    },
+                    "other_contacts": {
+                        "type": "boolean",
+                        "description": "Set true to list other contacts instead of connections.",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "gmail_list_drafts",
+            "description": "List Gmail drafts for the connected account using Composio.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum number of drafts to return.",
+                    },
+                    "page_token": {
+                        "type": "string",
+                        "description": "Pagination token from a previous drafts list call.",
+                    },
+                    "verbose": {
+                        "type": "boolean",
+                        "description": "Include full draft details such as subject and body when true.",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "gmail_search_people",
+            "description": "Search Google contacts and other people records associated with the Gmail account.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query to match against names, emails, phone numbers, etc.",
+                    },
+                    "person_fields": {
+                        "type": "string",
+                        "description": "Comma-separated fields from the People API to include in results.",
+                    },
+                    "page_size": {
+                        "type": "integer",
+                        "description": "Maximum number of people records to return.",
+                    },
+                    "other_contacts": {
+                        "type": "boolean",
+                        "description": "Include other contacts results when true.",
+                    },
+                    "page_token": {
+                        "type": "string",
+                        "description": "Pagination token to continue a previous search.",
+                    },
+                },
+                "required": ["query"],
                 "additionalProperties": False,
             },
         },
@@ -223,7 +396,6 @@ def gmail_create_draft(
     extra_recipients: Optional[List[str]] = None,
     is_html: Optional[bool] = None,
     thread_id: Optional[str] = None,
-    user_id: Optional[str] = None,
     attachment: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     arguments: Dict[str, Any] = {
@@ -235,7 +407,6 @@ def gmail_create_draft(
         "extra_recipients": extra_recipients,
         "is_html": is_html,
         "thread_id": thread_id,
-        "user_id": user_id,
         "attachment": attachment,
     }
     composio_user_id = _load_gmail_user_id()
@@ -246,9 +417,8 @@ def gmail_create_draft(
 
 def gmail_execute_draft(
     draft_id: str,
-    user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    arguments = {"draft_id": draft_id, "user_id": user_id}
+    arguments = {"draft_id": draft_id}
     composio_user_id = _load_gmail_user_id()
     if not composio_user_id:
         return {"error": "Gmail not connected. Please connect Gmail in settings first."}
@@ -259,13 +429,11 @@ def gmail_forward_email(
     message_id: str,
     recipient_email: str,
     additional_text: Optional[str] = None,
-    user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     arguments = {
         "message_id": message_id,
         "recipient_email": recipient_email,
         "additional_text": additional_text,
-        "user_id": user_id,
     }
     composio_user_id = _load_gmail_user_id()
     if not composio_user_id:
@@ -282,7 +450,6 @@ def gmail_reply_to_thread(
     extra_recipients: Optional[List[str]] = None,
     is_html: Optional[bool] = None,
     attachment: Optional[Dict[str, Any]] = None,
-    user_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     arguments = {
         "thread_id": thread_id,
@@ -293,12 +460,125 @@ def gmail_reply_to_thread(
         "extra_recipients": extra_recipients,
         "is_html": is_html,
         "attachment": attachment,
-        "user_id": user_id,
     }
     composio_user_id = _load_gmail_user_id()
     if not composio_user_id:
         return {"error": "Gmail not connected. Please connect Gmail in settings first."}
     return _execute("GMAIL_REPLY_TO_THREAD", composio_user_id, arguments)
+
+
+def gmail_delete_draft(
+    draft_id: str,
+) -> Dict[str, Any]:
+    arguments = {"draft_id": draft_id}
+    composio_user_id = _load_gmail_user_id()
+    if not composio_user_id:
+        return {"error": "Gmail not connected. Please connect Gmail in settings first."}
+    return _execute("GMAIL_DELETE_DRAFT", composio_user_id, arguments)
+
+
+def gmail_fetch_emails(
+    query: Optional[str] = None,
+    label_ids: Optional[List[str]] = None,
+    max_results: Optional[int] = None,
+    page_token: Optional[str] = None,
+    ids_only: Optional[bool] = None,
+    include_payload: Optional[bool] = None,
+    include_spam_trash: Optional[bool] = None,
+    verbose: Optional[bool] = None,
+) -> Dict[str, Any]:
+    arguments: Dict[str, Any] = {
+        "query": query,
+        "label_ids": label_ids,
+        "max_results": max_results,
+        "page_token": page_token,
+        "ids_only": ids_only,
+        "include_payload": include_payload,
+        "include_spam_trash": include_spam_trash,
+        "verbose": verbose,
+    }
+    composio_user_id = _load_gmail_user_id()
+    if not composio_user_id:
+        return {"error": "Gmail not connected. Please connect Gmail in settings first."}
+    return _execute("GMAIL_FETCH_EMAILS", composio_user_id, arguments)
+
+
+def gmail_get_contacts(
+    resource_name: Optional[str] = None,
+    person_fields: Optional[str] = None,
+    include_other_contacts: Optional[bool] = None,
+    page_token: Optional[str] = None,
+) -> Dict[str, Any]:
+    arguments = {
+        "resource_name": resource_name,
+        "person_fields": person_fields,
+        "include_other_contacts": include_other_contacts,
+        "page_token": page_token,
+    }
+    composio_user_id = _load_gmail_user_id()
+    if not composio_user_id:
+        return {"error": "Gmail not connected. Please connect Gmail in settings first."}
+    return _execute("GMAIL_GET_CONTACTS", composio_user_id, arguments)
+
+
+def gmail_get_people(
+    resource_name: Optional[str] = None,
+    person_fields: Optional[str] = None,
+    page_size: Optional[int] = None,
+    page_token: Optional[str] = None,
+    sync_token: Optional[str] = None,
+    other_contacts: Optional[bool] = None,
+) -> Dict[str, Any]:
+    arguments = {
+        "resource_name": resource_name,
+        "person_fields": person_fields,
+        "page_size": page_size,
+        "page_token": page_token,
+        "sync_token": sync_token,
+        "other_contacts": other_contacts,
+    }
+    composio_user_id = _load_gmail_user_id()
+    if not composio_user_id:
+        return {"error": "Gmail not connected. Please connect Gmail in settings first."}
+    return _execute("GMAIL_GET_PEOPLE", composio_user_id, arguments)
+
+
+def gmail_list_drafts(
+    max_results: Optional[int] = None,
+    page_token: Optional[str] = None,
+    verbose: Optional[bool] = None,
+) -> Dict[str, Any]:
+    arguments = {
+        "max_results": max_results,
+        "page_token": page_token,
+        "verbose": verbose,
+    }
+    composio_user_id = _load_gmail_user_id()
+    if not composio_user_id:
+        return {"error": "Gmail not connected. Please connect Gmail in settings first."}
+    return _execute("GMAIL_LIST_DRAFTS", composio_user_id, arguments)
+
+
+def gmail_search_people(
+    query: str,
+    person_fields: Optional[str] = None,
+    page_size: Optional[int] = None,
+    other_contacts: Optional[bool] = None,
+    page_token: Optional[str] = None,
+) -> Dict[str, Any]:
+    arguments: Dict[str, Any] = {
+        "query": query,
+        "person_fields": person_fields,
+        "other_contacts": other_contacts,
+    }
+    if page_size is not None:
+        arguments["pageSize"] = page_size
+    if page_token is not None:
+        arguments["pageToken"] = page_token
+    composio_user_id = _load_gmail_user_id()
+    if not composio_user_id:
+        return {"error": "Gmail not connected. Please connect Gmail in settings first."}
+    return _execute("GMAIL_SEARCH_PEOPLE", composio_user_id, arguments)
 
 
 def build_registry(agent_name: str) -> Dict[str, Callable[..., Any]]:  # noqa: ARG001
@@ -307,8 +587,14 @@ def build_registry(agent_name: str) -> Dict[str, Callable[..., Any]]:  # noqa: A
     return {
         "gmail_create_draft": gmail_create_draft,
         "gmail_execute_draft": gmail_execute_draft,
+        "gmail_delete_draft": gmail_delete_draft,
+        "gmail_fetch_emails": gmail_fetch_emails,
         "gmail_forward_email": gmail_forward_email,
         "gmail_reply_to_thread": gmail_reply_to_thread,
+        "gmail_get_contacts": gmail_get_contacts,
+        "gmail_get_people": gmail_get_people,
+        "gmail_list_drafts": gmail_list_drafts,
+        "gmail_search_people": gmail_search_people,
     }
 
 
@@ -317,6 +603,12 @@ __all__ = [
     "get_schemas",
     "gmail_create_draft",
     "gmail_execute_draft",
+    "gmail_delete_draft",
+    "gmail_fetch_emails",
     "gmail_forward_email",
     "gmail_reply_to_thread",
+    "gmail_get_contacts",
+    "gmail_get_people",
+    "gmail_list_drafts",
+    "gmail_search_people",
 ]

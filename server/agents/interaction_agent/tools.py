@@ -86,6 +86,24 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "wait",
+            "description": "Wait silently when a message is already in conversation history to avoid duplicating responses. Adds a <wait> log entry that is not visible to the user.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "description": "Brief explanation of why waiting (e.g., 'Message already sent', 'Draft already created').",
+                    },
+                },
+                "required": ["reason"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 def send_message_to_agent(agent_name: str, instructions: str) -> ToolResult:
@@ -189,6 +207,30 @@ def send_draft(
     )
 
 
+def wait(reason: str) -> ToolResult:
+    """Wait silently and add a <wait> log entry that is not visible to the user."""
+    
+    log = get_conversation_log()
+    
+    # Add wait entry to conversation log (not visible to frontend)
+    wait_message = f"<wait>{reason}</wait>"
+    log.record_reply(wait_message)
+    
+    logger.info(
+        "recorded wait",
+        extra={"reason": reason},
+    )
+
+    return ToolResult(
+        success=True,
+        payload={
+            "status": "waiting",
+            "reason": reason,
+        },
+        recorded_reply=True,
+    )
+
+
 def get_tool_schemas():
     """Return OpenAI-compatible tool schemas."""
     return TOOL_SCHEMAS
@@ -210,6 +252,8 @@ def handle_tool_call(name: str, arguments: Any) -> ToolResult:
             return send_message_to_user(**args)
         if name == "send_draft":
             return send_draft(**args)
+        if name == "wait":
+            return wait(**args)
 
         logger.warning("unexpected tool", extra={"tool": name})
         return ToolResult(success=False, payload={"error": f"Unknown tool: {name}"})

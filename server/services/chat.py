@@ -5,7 +5,6 @@ from fastapi import status
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from ..agents.interaction_agent.runtime import InteractionAgentRuntime
-from ..config import Settings
 from ..logging_config import logger
 from ..models import ChatMessage, ChatRequest
 from ..utils import error_response
@@ -18,7 +17,7 @@ def _extract_latest_user_message(payload: ChatRequest) -> Optional[ChatMessage]:
     return None
 
 
-async def handle_chat_request(payload: ChatRequest, *, settings: Settings) -> PlainTextResponse | JSONResponse:
+async def handle_chat_request(payload: ChatRequest) -> PlainTextResponse | JSONResponse:
     """Handle a chat request using the InteractionAgentRuntime."""
 
     # Extract user message

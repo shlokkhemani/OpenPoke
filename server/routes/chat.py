@@ -1,7 +1,6 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from ..config import Settings, get_settings
 from ..models import ChatHistoryClearResponse, ChatHistoryResponse, ChatRequest
 from ..services import get_conversation_log, get_trigger_service, handle_chat_request
 
@@ -11,9 +10,8 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 @router.post("/send", response_class=JSONResponse, summary="Submit a chat message and receive a completion")
 async def chat_send(
     payload: ChatRequest,
-    settings: Settings = Depends(get_settings),
 ) -> JSONResponse:
-    return await handle_chat_request(payload, settings=settings)
+    return await handle_chat_request(payload)
 
 
 @router.get("/history", response_model=ChatHistoryResponse)

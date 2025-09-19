@@ -7,14 +7,14 @@
 - [x] Outline the revised response contract now that SSE streaming will be removed in favor of blocking responses.
 
 ## Phase 2 · Conversation & Prompt Infrastructure
-- [x] Replace legacy chat history with an append-only writer targeting `data/conversation/poke_conversation.log`, enforcing UTF-8, newline separation, and `<user message>/<agent message>/<replies>` ordering.
+- [x] Replace legacy chat history with an append-only writer targeting `data/conversation/poke_conversation.log`, enforcing UTF-8, newline separation, and `<user_message>/<agent_message>/<poke_reply>` ordering.
 - [x] Build a log service with `record_user_message`, `record_agent_message`, and `record_reply` helpers plus `load_transcript` for prompt assembly.
 - [x] Add strict tag validation and whitespace normalization to keep the transcript canonical and injection-resistant.
 - [x] Construct a system-prompt composer that injects: (a) static persona instructions, (b) full conversation transcript, and (c) `<active_agents>` roster block so the model receives history via the system field while preserving the OpenRouter message array API.
 
 ## Phase 3 · Execution-Agent Journal Persistence
 - [x] Establish `data/execution_agents/` as the home for per-agent logs; implement deterministic filename sanitization (e.g., `slugify(name) + .log`).
-- [x] Provide lightweight append helpers that record `<request>` and `<action performed>` entries with ISO timestamps.
+- [x] Provide lightweight append helpers that record `<agent_request>` and `<agent_action>` entries with timestamps.
 - [x] Load recent actions for each agent during startup so the roster seeds itself directly from the journals.
 - [x] Ensure writes are serialized with per-agent locks so multiple requests cannot interleave writes.
 
@@ -65,15 +65,15 @@
 - [x] Update interaction agent to handle execution agent invocations:
   - Detects when tool calls include execution agents (0, 1, or multiple)
   - Collects all execution results asynchronously
-  - Records execution agent messages as `<agent message>` tags (internal)
+  - Records execution agent messages as `<agent_message>` tags (internal)
   - Makes second LLM call to analyze execution results and craft final user response
-  - Records only final response as `<replies>` tag (shown to users)
+  - Records only final response as `<poke_reply>` tag (shown to users)
 - [x] Remove API key and model parameters throughout codebase:
   - All components now load from environment variables via get_settings()
   - Cleaner initialization without parameter threading
 - [x] Restructure logging to use XML-style tags consistently:
-  - Execution agents: `<agent request>`, `<action>`, `<tool response>`, `<agent response>`
-  - Interaction agent: `<user message>`, `<agent message>`, `<replies>`
+  - Execution agents: `<agent_request>`, `<agent_action>`, `<tool_response>`, `<agent_response>`
+  - Interaction agent: `<user_message>`, `<agent_message>`, `<poke_reply>`
 - [x] Gmail tool integration already complete (`execution_agent/tools.py` has all 4 operations)
 - [x] Execution logging system with XML tags (`services/execution_log.py`)
 - [ ] **Draft Display & Confirmation Flow:**

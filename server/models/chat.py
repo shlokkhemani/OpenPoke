@@ -10,6 +10,7 @@ class ChatMessage(BaseModel):
 
     role: str = Field(..., min_length=1)
     content: str = Field(...)
+    timestamp: Optional[str] = Field(default=None)
 
     @model_validator(mode="before")
     @classmethod

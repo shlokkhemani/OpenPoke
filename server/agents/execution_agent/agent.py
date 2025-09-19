@@ -76,14 +76,14 @@ class ExecutionAgent:
             if self.conversation_limit and self.conversation_limit > 0:
                 # Parse entries and limit them
                 lines = transcript.split('\n')
-                request_count = sum(1 for line in lines if '<agent request>' in line)
+                request_count = sum(1 for line in lines if '<agent_request' in line)
 
                 if request_count > self.conversation_limit:
                     # Find where to cut
                     kept_requests = 0
                     cutoff_index = len(lines)
                     for i in range(len(lines) - 1, -1, -1):
-                        if '<agent request>' in lines[i]:
+                        if '<agent_request' in lines[i]:
                             kept_requests += 1
                             if kept_requests == self.conversation_limit:
                                 cutoff_index = i

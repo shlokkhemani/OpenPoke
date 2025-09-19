@@ -1,18 +1,35 @@
 """Execution agent log management with structured XML-style tags."""
 
+from __future__ import annotations
+
+import re
 import threading
-from datetime import datetime, timezone
+from datetime import datetime
 from html import escape, unescape
 from pathlib import Path
-from typing import Iterator, List, Optional, Tuple
+from typing import Dict, Iterator, List, Tuple
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..config import get_settings
 from ..logging_config import logger
+from .timezone_store import get_timezone_store
 
 
-def _utc_now() -> str:
-    """Get current UTC timestamp."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+def _current_timestamp() -> str:
+    """Return current time formatted in the user's preferred timezone."""
+    store = get_timezone_store()
+    tz_name = store.get_timezone()
+    try:
+        tz = ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        logger.warning("unknown timezone; defaulting to UTC", extra={"timezone": tz_name})
+        tz = ZoneInfo("UTC")
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(
+            "timezone resolution failed; defaulting to UTC", extra={"error": str(exc)}
+        )
+        tz = ZoneInfo("UTC")
+    return datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _slugify(name: str) -> str:
@@ -33,6 +50,9 @@ def _encode_payload(payload: str) -> str:
 def _decode_payload(payload: str) -> str:
     """Decode payload from storage."""
     return unescape(payload).replace("\\n", "\n")
+
+
+_ATTR_PATTERN = re.compile(r"(\w+)\s*=\s*\"([^\"]*)\"")
 
 
 class ExecutionAgentLogStore:
@@ -65,16 +85,17 @@ class ExecutionAgentLogStore:
     def _append(self, agent_name: str, tag: str, payload: str) -> None:
         """Append an entry with the given tag."""
         encoded = _encode_payload(str(payload))
-        entry = f"<{tag}>{encoded}</{tag}>\n"
+        timestamp = _current_timestamp()
+        entry = f"<{tag} timestamp=\"{timestamp}\">{encoded}</{tag}>\n"
 
         with self._lock_for(agent_name):
             try:
-                with self._log_path(agent_name).open("a", encoding="utf-8") as f:
-                    f.write(entry)
+                with self._log_path(agent_name).open("a", encoding="utf-8") as handle:
+                    handle.write(entry)
             except Exception as exc:
                 logger.error(f"Failed to append to log: {exc}")
 
-    def _parse_line(self, line: str) -> Optional[Tuple[str, str]]:
+    def _parse_line(self, line: str) -> Optional[Tuple[str, str, str]]:
         """Parse a single log line."""
         stripped = line.strip()
         if not (stripped.startswith("<") and "</" in stripped):
@@ -87,31 +108,40 @@ class ExecutionAgentLogStore:
         if open_end == -1 or close_start == -1 or close_end == -1:
             return None
 
-        tag = stripped[1:open_end]
-        closing_tag = stripped[close_start + 2 : close_end]
+        open_tag_content = stripped[1:open_end]
+        if " " in open_tag_content:
+            tag, attr_string = open_tag_content.split(" ", 1)
+        else:
+            tag, attr_string = open_tag_content, ""
 
+        closing_tag = stripped[close_start + 2 : close_end]
         if closing_tag != tag:
             return None
 
-        return tag, _decode_payload(stripped[open_end + 1 : close_start])
+        attributes: Dict[str, str] = {
+            match.group(1): match.group(2) for match in _ATTR_PATTERN.finditer(attr_string)
+        }
+        timestamp = attributes.get("timestamp", "")
+        payload = _decode_payload(stripped[open_end + 1 : close_start])
+        return tag, timestamp, payload
 
     def record_request(self, agent_name: str, instructions: str) -> None:
         """Record an incoming request from the interaction agent."""
-        self._append(agent_name, "agent request", f"[{_utc_now()}] {instructions}")
+        self._append(agent_name, "agent_request", instructions)
 
     def record_action(self, agent_name: str, description: str) -> None:
         """Record an agent action (tool call)."""
-        self._append(agent_name, "action", description)
+        self._append(agent_name, "agent_action", description)
 
     def record_tool_response(self, agent_name: str, tool_name: str, response: str) -> None:
         """Record the response from a tool."""
-        self._append(agent_name, "tool response", f"{tool_name}: {response}")
+        self._append(agent_name, "tool_response", f"{tool_name}: {response}")
 
     def record_agent_response(self, agent_name: str, response: str) -> None:
         """Record the agent's final response."""
-        self._append(agent_name, "agent response", f"[{_utc_now()}] {response}")
+        self._append(agent_name, "agent_response", response)
 
-    def iter_entries(self, agent_name: str) -> Iterator[Tuple[str, str]]:
+    def iter_entries(self, agent_name: str) -> Iterator[Tuple[str, str, str]]:
         """Iterate over all log entries for an agent."""
         path = self._log_path(agent_name)
         with self._lock_for(agent_name):
@@ -130,12 +160,16 @@ class ExecutionAgentLogStore:
 
     def load_transcript(self, agent_name: str) -> str:
         """Load the full transcript for inclusion in system prompt."""
-        return "\n".join(
-            f"<{tag}>{escape(payload, quote=False)}</{tag}>"
-            for tag, payload in self.iter_entries(agent_name)
-        )
+        parts: List[str] = []
+        for tag, timestamp, payload in self.iter_entries(agent_name):
+            escaped = escape(payload, quote=False)
+            if timestamp:
+                parts.append(f"<{tag} timestamp=\"{timestamp}\">{escaped}</{tag}>")
+            else:
+                parts.append(f"<{tag}>{escaped}</{tag}>")
+        return "\n".join(parts)
 
-    def load_recent(self, agent_name: str, limit: int = 10) -> list[tuple[str, str]]:
+    def load_recent(self, agent_name: str, limit: int = 10) -> list[tuple[str, str, str]]:
         """Load recent log entries."""
         entries = list(self.iter_entries(agent_name))
         return entries[-limit:] if entries else []

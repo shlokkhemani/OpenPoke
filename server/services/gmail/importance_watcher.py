@@ -51,7 +51,6 @@ class ImportantEmailWatcher:
         self._running = False
         self._seen_store = seen_store or GmailSeenStore(_DEFAULT_SEEN_PATH, DEFAULT_SEEN_LIMIT)
         self._cleaner = EmailTextCleaner(max_url_length=60)
-        self._warmed_up = self._seen_store.has_entries()
 
     # Start the background email polling task
     async def start(self) -> None:
@@ -96,7 +95,6 @@ class ImportantEmailWatcher:
         composio_user_id = _load_gmail_user_id()
         if not composio_user_id:
             logger.debug("Gmail not connected; skipping importance poll")
-            self._warmed_up = self._seen_store.has_entries()
             return
 
         query = f"label:INBOX newer_than:{self._lookback_minutes}m"
@@ -125,11 +123,10 @@ class ImportantEmailWatcher:
             logger.debug("No recent Gmail messages found for watcher")
             return
 
-        if not self._warmed_up:
+        if not self._seen_store.has_entries():
             self._seen_store.mark_seen(email.id for email in processed_emails)
-            self._warmed_up = True
             logger.info(
-                "Important email watcher warmed up",
+                "Important email watcher seeded dormant messages",
                 extra={"seeded_ids": len(processed_emails)},
             )
             return
@@ -173,7 +170,8 @@ class ImportantEmailWatcher:
     async def _dispatch_summary(self, summary: str) -> None:
         runtime = _resolve_interaction_runtime()
         try:
-            await runtime.handle_agent_message(summary)
+            contextualized = f"Important email watcher notification:\n{summary}"
+            await runtime.handle_agent_message(contextualized)
         except Exception as exc:  # pragma: no cover - defensive
             logger.error(
                 "Failed to dispatch important email summary",

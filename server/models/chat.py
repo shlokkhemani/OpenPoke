@@ -24,20 +24,12 @@ class ChatMessage(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
     messages: List[ChatMessage] = Field(default_factory=list)
-    api_key: Optional[str] = Field(default=None, alias="api_key")
     model: Optional[str] = None
     system: Optional[str] = None
     stream: bool = True
-
-    @model_validator(mode="before")
-    @classmethod
-    def _alias_support(cls, data: Any) -> Any:
-        if isinstance(data, dict) and "apiKey" in data and "api_key" not in data:
-            data["api_key"] = data["apiKey"]
-        return data
 
     def openrouter_messages(self) -> List[Dict[str, str]]:
         return [msg.as_openrouter() for msg in self.messages if msg.content.strip()]

@@ -2,25 +2,22 @@
 import { useCallback, useEffect, useState } from 'react';
 
 export type Settings = {
-  apiKey: string;
   timezone: string;
 };
 
 export function useSettings() {
-  const [settings, setSettings] = useState<Settings>({ apiKey: '', timezone: '' });
+  const [settings, setSettings] = useState<Settings>({ timezone: '' });
 
   useEffect(() => {
     try {
-      const apiKey = localStorage.getItem('openrouter_api_key') || '';
       const timezone = localStorage.getItem('user_timezone') || '';
-      setSettings({ apiKey, timezone });
+      setSettings({ timezone });
     } catch {}
   }, []);
 
   const persist = useCallback((s: Settings) => {
     setSettings(s);
     try {
-      localStorage.setItem('openrouter_api_key', s.apiKey);
       localStorage.setItem('user_timezone', s.timezone);
     } catch {}
   }, []);
@@ -39,7 +36,6 @@ export default function SettingsModal({
   settings: Settings;
   onSave: (s: Settings) => void;
 }) {
-  const [apiKey, setApiKey] = useState(settings.apiKey);
   const [timezone, setTimezone] = useState(settings.timezone);
   const [connectingGmail, setConnectingGmail] = useState(false);
   const [gmailStatus, setGmailStatus] = useState<string>("");
@@ -144,7 +140,6 @@ export default function SettingsModal({
   }, [gmailConnId]);
 
   useEffect(() => {
-    setApiKey(settings.apiKey);
     setTimezone(settings.timezone);
   }, [settings]);
 
@@ -165,17 +160,6 @@ export default function SettingsModal({
           </button>
         </div>
         <div className="space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">OpenRouter API Key</label>
-            <input
-              className="input"
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="sk-or-v1-..."
-            />
-            <p className="mt-1 text-xs text-gray-500">Stored locally in your browser.</p>
-          </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">Timezone</label>
             <input
@@ -229,7 +213,7 @@ export default function SettingsModal({
           <button
             className="btn"
             onClick={() => {
-              onSave({ apiKey, timezone });
+              onSave({ timezone });
               onClose();
             }}
           >

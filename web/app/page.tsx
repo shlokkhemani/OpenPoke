@@ -104,9 +104,8 @@ export default function Page() {
     return () => window.clearInterval(intervalId);
   }, [loadHistory]);
 
-  const hasApiKey = settings.apiKey.trim().length > 0;
-  const canSubmit = hasApiKey && input.trim().length > 0;
-  const inputPlaceholder = settings.apiKey ? 'iMessage…' : 'Add your OpenRouter API key in Settings to start';
+  const canSubmit = input.trim().length > 0;
+  const inputPlaceholder = 'Type a message…';
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -133,7 +132,6 @@ export default function Page() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             messages: [{ role: 'user', content: trimmed }],
-            apiKey: settings.apiKey,
           }),
         });
 
@@ -192,7 +190,7 @@ export default function Page() {
         setTimeout(pollForAssistantResponse, 1000);
       }
     },
-    [loadHistory, settings.apiKey],
+    [loadHistory],
   );
 
   const handleClearHistory = useCallback(async () => {

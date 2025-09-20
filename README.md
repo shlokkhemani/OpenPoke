@@ -1,4 +1,4 @@
-# OpenPoke
+# OpenPoke 🌴
 
 OpenPoke is a simplified, open-source take on [Interaction Company’s](https://interaction.co/about) [Poke](https://poke.com/) assistant—built to show how a multi-agent orchestration stack can feel genuinely useful. It keeps the handful of things Poke is great at (email triage, reminders, and persistent agents) while staying easy to spin up locally.
 
@@ -15,8 +15,8 @@ OpenPoke is a simplified, open-source take on [Interaction Company’s](https://
 ## Quickstart
 1. **Clone and enter the repo.**
    ```bash
-   git clone <repo-url>
-   cd openpoke
+   git clone https://github.com/shlokkhemani/OpenPoke
+   cd OpenPoke
    ```
 2. **Create a shared env file.** Copy the template and open it in your editor:
    ```bash
@@ -51,7 +51,7 @@ OpenPoke is a simplified, open-source take on [Interaction Company’s](https://
    ```bash
    npm run dev --prefix web
    ```
-9. **Connect Gmail for email workflows.** With both services running, open [http://localhost:3000](http://localhost:3000), head to *Settings → Gmail*, and complete the Composio OAuth flow. Email tools, triggers, and monitors rely on this step.
+9. **Connect Gmail for email workflows.** With both services running, open [http://localhost:3000](http://localhost:3000), head to *Settings → Gmail*, and complete the Composio OAuth flow. Email drafting, replies, and the important-email monitor rely on this step.
 
 The web app proxies API calls to the Python server using the values in `.env`, so keeping both processes running is required for end-to-end flows.
 

@@ -104,7 +104,7 @@ async def summarize_conversation() -> bool:
         },
     )
 
-    summary_text = await _call_openrouter(prompt, settings.default_model, settings.openrouter_api_key)
+    summary_text = await _call_openrouter(prompt, settings.summarizer_model, settings.openrouter_api_key)
     summary_body = summary_text if summary_text else state.summary_text
 
     refreshed_entries = _collect_entries(conversation_log)

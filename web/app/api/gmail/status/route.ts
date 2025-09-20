@@ -2,14 +2,14 @@ export const runtime = 'nodejs';
 
 export async function POST(req: Request) {
   let body: any = {};
-  try { body = await req.json(); } catch {}
+  try {
+    body = await req.json();
+  } catch {}
   const userId = body?.userId || '';
   const connectionRequestId = body?.connectionRequestId || '';
 
   const serverBase = process.env.PY_SERVER_URL || 'http://localhost:8001';
-  const base = serverBase.replace(/\/$/, '');
-  const statusPath = process.env.PY_GMAIL_STATUS_PATH || '/api/v1/integrations/composio/gmail/status';
-  const url = `${base}${statusPath}`;
+  const url = `${serverBase.replace(/\/$/, '')}/api/v1/gmail/status`;
   const payload: any = {};
   if (userId) payload.user_id = userId;
   if (connectionRequestId) payload.connection_request_id = connectionRequestId;

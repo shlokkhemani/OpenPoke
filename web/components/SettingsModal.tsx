@@ -3,19 +3,17 @@ import { useCallback, useEffect, useState } from 'react';
 
 export type Settings = {
   apiKey: string;
-  model: string;
   timezone: string;
 };
 
 export function useSettings() {
-  const [settings, setSettings] = useState<Settings>({ apiKey: '', model: 'openrouter/auto', timezone: '' });
+  const [settings, setSettings] = useState<Settings>({ apiKey: '', timezone: '' });
 
   useEffect(() => {
     try {
       const apiKey = localStorage.getItem('openrouter_api_key') || '';
-      const model = localStorage.getItem('openrouter_model') || 'openrouter/auto';
       const timezone = localStorage.getItem('user_timezone') || '';
-      setSettings({ apiKey, model, timezone });
+      setSettings({ apiKey, timezone });
     } catch {}
   }, []);
 
@@ -23,7 +21,6 @@ export function useSettings() {
     setSettings(s);
     try {
       localStorage.setItem('openrouter_api_key', s.apiKey);
-      localStorage.setItem('openrouter_model', s.model);
       localStorage.setItem('user_timezone', s.timezone);
     } catch {}
   }, []);
@@ -43,7 +40,6 @@ export default function SettingsModal({
   onSave: (s: Settings) => void;
 }) {
   const [apiKey, setApiKey] = useState(settings.apiKey);
-  const [model, setModel] = useState(settings.model);
   const [timezone, setTimezone] = useState(settings.timezone);
   const [connectingGmail, setConnectingGmail] = useState(false);
   const [gmailStatus, setGmailStatus] = useState<string>("");
@@ -76,7 +72,7 @@ export default function SettingsModal({
           localStorage.setItem(key, userId);
         }
       } catch {}
-      const resp = await fetch('/api/integrations/composio/gmail', {
+      const resp = await fetch('/api/gmail/connect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId }),
@@ -115,7 +111,7 @@ export default function SettingsModal({
       let userId = '';
       try { userId = localStorage.getItem(key) || ''; } catch {}
       const connectionRequestId = gmailConnId || (typeof window !== 'undefined' ? localStorage.getItem('gmail_connection_request_id') || '' : '');
-      const resp = await fetch('/api/integrations/composio/gmail/status', {
+      const resp = await fetch('/api/gmail/status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, connectionRequestId }),
@@ -141,7 +137,6 @@ export default function SettingsModal({
 
   useEffect(() => {
     setApiKey(settings.apiKey);
-    setModel(settings.model);
     setTimezone(settings.timezone);
   }, [settings]);
 
@@ -167,16 +162,6 @@ export default function SettingsModal({
               placeholder="sk-or-v1-..."
             />
             <p className="mt-1 text-xs text-gray-500">Stored locally in your browser.</p>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Model</label>
-            <input
-              className="input"
-              type="text"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder="e.g. openrouter/auto or anthropic/claude-3.5-sonnet"
-            />
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">Timezone</label>
@@ -231,7 +216,7 @@ export default function SettingsModal({
           <button
             className="btn"
             onClick={() => {
-              onSave({ apiKey, model, timezone });
+              onSave({ apiKey, timezone });
               onClose();
             }}
           >

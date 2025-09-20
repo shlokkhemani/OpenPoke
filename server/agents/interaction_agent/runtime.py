@@ -50,7 +50,7 @@ class InteractionAgentRuntime:
     def __init__(self) -> None:
         settings = get_settings()
         self.api_key = settings.openrouter_api_key
-        self.model = settings.default_model or "openrouter/auto"
+        self.model = settings.interaction_agent_model
         self.settings = settings
         self.conversation_log = get_conversation_log()
         self.working_memory_log = get_working_memory_log()

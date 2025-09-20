@@ -10,9 +10,12 @@ from pathlib import Path
 from typing import Dict, Iterator, List, Tuple
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from ..config import get_settings
 from ..logging_config import logger
 from .timezone_store import get_timezone_store
+
+
+_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+_EXECUTION_LOG_DIR = _DATA_DIR / "execution_agents"
 
 
 def _current_timestamp() -> str:
@@ -192,7 +195,7 @@ class ExecutionAgentLogStore:
             logger.error(f"Failed to clear execution logs: {exc}")
 
 
-_execution_agent_logs = ExecutionAgentLogStore(get_settings().resolved_execution_agents_dir)
+_execution_agent_logs = ExecutionAgentLogStore(_EXECUTION_LOG_DIR)
 
 
 def get_execution_agent_logs() -> ExecutionAgentLogStore:

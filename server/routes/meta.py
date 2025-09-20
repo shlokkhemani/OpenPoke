@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from ..config import Settings, get_settings
 from ..models import (
@@ -13,28 +13,25 @@ from ..services import get_timezone_store
 
 router = APIRouter(tags=["meta"])
 
-PUBLIC_ENDPOINTS = [
-    "/api/v1/chat/send",
-    "/api/v1/chat/history",
-    "/api/v1/integrations/composio/gmail/connect",
-    "/api/v1/integrations/composio/gmail/status",
-    "/api/v1/tools/gmail/fetch",
-    "/api/v1/meta/timezone",
-]
-
-
 @router.get("/health", response_model=HealthResponse)
 def health(settings: Settings = Depends(get_settings)) -> HealthResponse:
     return HealthResponse(ok=True, service="openpoke", version=settings.app_version)
 
 
 @router.get("/meta", response_model=RootResponse)
-def meta(settings: Settings = Depends(get_settings)) -> RootResponse:
+def meta(request: Request, settings: Settings = Depends(get_settings)) -> RootResponse:
+    endpoints = sorted(
+        {
+            route.path
+            for route in request.app.routes
+            if getattr(route, "include_in_schema", False) and route.path.startswith("/api/")
+        }
+    )
     return RootResponse(
         status="ok",
         service="openpoke",
         version=settings.app_version,
-        endpoints=["/api/v1/health", "/api/v1/meta", *PUBLIC_ENDPOINTS],
+        endpoints=endpoints,
     )
 
 

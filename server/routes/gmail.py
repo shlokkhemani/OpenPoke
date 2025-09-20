@@ -7,7 +7,7 @@ from ..config import Settings, get_settings
 from ..models import GmailConnectPayload, GmailStatusPayload
 from ..services import fetch_status, initiate_connect
 
-router = APIRouter(prefix="/integrations/composio/gmail", tags=["gmail"])
+router = APIRouter(prefix="/gmail", tags=["gmail"])
 
 
 @router.post("/connect")

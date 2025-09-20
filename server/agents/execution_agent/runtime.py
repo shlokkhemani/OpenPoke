@@ -31,7 +31,7 @@ class ExecutionAgentRuntime:
         settings = get_settings()
         self.agent = ExecutionAgent(agent_name)
         self.api_key = settings.openrouter_api_key
-        self.model = settings.default_model or "openrouter/auto"
+        self.model = settings.execution_agent_model
         self.tool_registry = get_tool_registry(agent_name=agent_name)
         self.tool_schemas = get_tool_schemas()
 

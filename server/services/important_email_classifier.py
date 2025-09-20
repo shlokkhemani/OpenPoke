@@ -82,7 +82,7 @@ async def classify_email_importance(email: ProcessedEmail) -> Optional[str]:
 
     settings = get_settings()
     api_key = settings.openrouter_api_key
-    model = settings.default_model or "openrouter/auto"
+    model = settings.email_classifier_model
 
     if not api_key:
         logger.warning("Skipping importance check; OpenRouter API key missing")

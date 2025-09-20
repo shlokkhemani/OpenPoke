@@ -9,10 +9,13 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from ...config import get_settings
 from ...logging_config import logger
 from ..timezone_store import get_timezone_store
 from .state import LogEntry, SummaryState
+
+
+_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+_WORKING_MEMORY_LOG_PATH = _DATA_DIR / "conversation" / "poke_working_memory.log"
 
 
 def _encode_payload(payload: str) -> str:
@@ -257,8 +260,7 @@ def get_working_memory_log() -> WorkingMemoryLog:
     if _working_memory_log is None:
         with _factory_lock:
             if _working_memory_log is None:
-                settings = get_settings()
-                _working_memory_log = WorkingMemoryLog(settings.resolved_working_memory_log_path)
+                _working_memory_log = WorkingMemoryLog(_WORKING_MEMORY_LOG_PATH)
     return _working_memory_log
 
 

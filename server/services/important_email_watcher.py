@@ -12,7 +12,6 @@ from .gmail_processing import EmailTextCleaner, ProcessedEmail, parse_gmail_fetc
 from .gmail_seen_store import GmailSeenStore
 from .important_email_classifier import classify_email_importance
 from ..agents.interaction_agent.runtime import InteractionAgentRuntime
-from ..config import get_settings
 from ..logging_config import logger
 
 
@@ -22,10 +21,8 @@ DEFAULT_MAX_RESULTS = 50
 DEFAULT_SEEN_LIMIT = 300
 
 
-def _default_seen_path() -> Path:
-    settings = get_settings()
-    fallback = Path(__file__).parent.parent / "data" / "gmail_seen.json"
-    return settings.resolve_path(None, fallback)
+_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+_DEFAULT_SEEN_PATH = _DATA_DIR / "gmail_seen.json"
 
 
 class ImportantEmailWatcher:
@@ -43,7 +40,7 @@ class ImportantEmailWatcher:
         self._lock = asyncio.Lock()
         self._task: Optional[asyncio.Task[None]] = None
         self._running = False
-        self._seen_store = seen_store or GmailSeenStore(_default_seen_path(), DEFAULT_SEEN_LIMIT)
+        self._seen_store = seen_store or GmailSeenStore(_DEFAULT_SEEN_PATH, DEFAULT_SEEN_LIMIT)
         self._cleaner = EmailTextCleaner(max_url_length=60)
         self._warmed_up = self._seen_store.has_entries()
 

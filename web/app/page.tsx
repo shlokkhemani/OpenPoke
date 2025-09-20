@@ -128,7 +128,6 @@ export default function Page() {
           body: JSON.stringify({
             messages: [{ role: 'user', content: trimmed }],
             apiKey: settings.apiKey,
-            model: settings.model,
           }),
         });
 
@@ -187,7 +186,7 @@ export default function Page() {
         setTimeout(pollForAssistantResponse, 1000);
       }
     },
-    [loadHistory, settings.apiKey, settings.model],
+    [loadHistory, settings.apiKey],
   );
 
   const clearError = useCallback(() => setError(null), []);
@@ -238,7 +237,7 @@ export default function Page() {
               <div className="mx-auto my-12 max-w-sm text-center text-gray-500">
                 <h2 className="mb-2 text-xl font-semibold text-gray-700">Start a conversation</h2>
                 <p className="text-sm">
-                  Your messages will appear here. Configure your OpenRouter key and model in Settings.
+                  Your messages will appear here. Add your OpenRouter key in Settings to get started.
                 </p>
               </div>
             )}
@@ -316,7 +315,7 @@ export default function Page() {
             </form>
 
             <div className="mt-2 flex items-center justify-end text-xs text-gray-500">
-              <span className="chip">Model: {settings.model || 'openrouter/auto'}</span>
+              <span className="chip">Requests use the server-configured model.</span>
             </div>
           </div>
         </div>

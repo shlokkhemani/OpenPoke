@@ -32,7 +32,7 @@
 - First poll should detect an empty in-memory store and mark fetched IDs as seen without classification (set a `_warmed_up` flag or compare previously loaded IDs).
 
 ### 3. Design LLM classifier & summary call
-- Reuse `get_settings().default_model` and `.openrouter_api_key` just like agent runtimes.
+- Reuse `get_settings().email_classifier_model` and `.openrouter_api_key` just like agent runtimes.
 - Define a function schema or Pydantic model describing output: `{ "important": bool, "summary": Optional[str] }` where `summary` is only allowed when `important` is true.
 - Prompt contents should include:
   - Brief instructions emphasising the rubric: surface emails that require attention/action (replies, meeting notices, OTPs, deadlines) and ignore low-impact confirmations/promotions/newsletters.

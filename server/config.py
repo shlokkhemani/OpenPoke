@@ -28,23 +28,35 @@ def _load_env_file() -> None:
 _load_env_file()
 
 
-class Settings(BaseModel):
-    """Application settings with simplified path resolution."""
+DEFAULT_APP_NAME = "OpenPoke Server"
+DEFAULT_APP_VERSION = "0.3.0"
 
-    app_name: str = Field(default=os.getenv("OPENPOKE_APP_NAME", "OpenPoke Server"))
-    app_version: str = Field(default=os.getenv("OPENPOKE_VERSION", "0.3.0"))
-    default_model: str = Field(default=os.getenv("OPENROUTER_MODEL", "openrouter/auto"))
+
+class Settings(BaseModel):
+    """Application settings with lightweight env fallbacks."""
+
+    # App metadata
+    app_name: str = Field(default=DEFAULT_APP_NAME)
+    app_version: str = Field(default=DEFAULT_APP_VERSION)
+
+    # LLM model selection
+    interaction_agent_model: str = Field(default="anthropic/claude-sonnet-4")
+    execution_agent_model: str = Field(default="anthropic/claude-sonnet-4")
+    execution_agent_search_model: str = Field(default="anthropic/claude-sonnet-4")
+    summarizer_model: str = Field(default="anthropic/claude-sonnet-4")
+    email_classifier_model: str = Field(default="anthropic/claude-sonnet-4")
+
+    # Credentials / integrations
     openrouter_api_key: Optional[str] = Field(default=os.getenv("OPENROUTER_API_KEY"))
+    composio_gmail_auth_config_id: Optional[str] = Field(default=os.getenv("COMPOSIO_GMAIL_AUTH_CONFIG_ID"))
+    composio_api_key: Optional[str] = Field(default=os.getenv("COMPOSIO_API_KEY"))
+
+    # HTTP behaviour
     cors_allow_origins_raw: str = Field(default=os.getenv("OPENPOKE_CORS_ALLOW_ORIGINS", "*"))
     enable_docs: bool = Field(default=os.getenv("OPENPOKE_ENABLE_DOCS", "1") != "0")
     docs_url: Optional[str] = Field(default=os.getenv("OPENPOKE_DOCS_URL", "/docs"))
-    composio_gmail_auth_config_id: Optional[str] = Field(default=os.getenv("COMPOSIO_GMAIL_AUTH_CONFIG_ID"))
 
-    # Path configurations - simplified
-    chat_history_path: Optional[str] = Field(default=os.getenv("OPENPOKE_CHAT_HISTORY_PATH"))
-    conversation_log_path: Optional[str] = Field(default=os.getenv("OPENPOKE_CONVERSATION_LOG_PATH"))
-    execution_agents_dir: Optional[str] = Field(default=os.getenv("OPENPOKE_EXECUTION_AGENTS_DIR"))
-    working_memory_log_path: Optional[str] = Field(default=os.getenv("OPENPOKE_WORKING_MEMORY_LOG_PATH"))
+    # Summarisation controls
     conversation_summary_threshold: int = Field(default=100)
     conversation_summary_tail_size: int = Field(default=10)
 
@@ -57,47 +69,13 @@ class Settings(BaseModel):
 
     @property
     def resolved_docs_url(self) -> Optional[str]:
-        """Get docs URL if enabled."""
+        """Return documentation URL when docs are enabled."""
         return (self.docs_url or "/docs") if self.enable_docs else None
-
-    def resolve_path(self, raw_path: Optional[str], default: Path) -> Path:
-        """Helper to resolve paths consistently."""
-        if raw_path and raw_path.strip():
-            path = Path(raw_path.strip())
-            return path if path.is_absolute() else (Path(__file__).parent / path).resolve()
-        return default
-
-    @property
-    def resolved_conversation_log_path(self) -> Path:
-        """Get conversation log path."""
-        return self.resolve_path(
-            self.conversation_log_path or self.chat_history_path,
-            Path(__file__).parent / "data" / "conversation" / "poke_conversation.log"
-        )
-
-    @property
-    def resolved_chat_history_path(self) -> Path:
-        """Alias for conversation log path."""
-        return self.resolved_conversation_log_path
-
-    @property
-    def resolved_working_memory_log_path(self) -> Path:
-        """Location for the working-memory conversation summary file."""
-        default = Path(__file__).parent / "data" / "conversation" / "poke_working_memory.log"
-        return self.resolve_path(self.working_memory_log_path, default)
 
     @property
     def summarization_enabled(self) -> bool:
-        """Whether conversation summarization is active."""
+        """Flag indicating conversation summarisation is active."""
         return self.conversation_summary_threshold > 0
-
-    @property
-    def resolved_execution_agents_dir(self) -> Path:
-        """Get execution agents directory."""
-        return self.resolve_path(
-            self.execution_agents_dir,
-            Path(__file__).parent / "data" / "execution_agents"
-        )
 
 
 @lru_cache(maxsize=1)

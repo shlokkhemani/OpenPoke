@@ -6,12 +6,10 @@ export async function POST(req: Request) {
     body = await req.json();
   } catch {}
   const userId = body?.userId || '';
-  const authConfigId = body?.authConfigId || process.env.COMPOSIO_GMAIL_AUTH_CONFIG_ID || '';
+  const authConfigId = body?.authConfigId || '';
 
   const serverBase = process.env.PY_SERVER_URL || 'http://localhost:8001';
-  const base = serverBase.replace(/\/$/, '');
-  const connectPath = process.env.PY_GMAIL_CONNECT_PATH || '/api/v1/integrations/composio/gmail/connect';
-  const url = `${base}${connectPath}`;
+  const url = `${serverBase.replace(/\/$/, '')}/api/v1/gmail/connect`;
 
   try {
     const resp = await fetch(url, {
@@ -20,9 +18,8 @@ export async function POST(req: Request) {
       body: JSON.stringify({ user_id: userId, auth_config_id: authConfigId }),
     });
     const data = await resp.json().catch(() => ({}));
-    const status = resp.status;
     return new Response(JSON.stringify(data), {
-      status,
+      status: resp.status,
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
     });
   } catch (e: any) {

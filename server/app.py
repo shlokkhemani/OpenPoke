@@ -12,7 +12,6 @@ from .config import Settings, get_settings
 from .logging_config import configure_logging, logger
 from .models import RootResponse
 from .routes import api_router
-from .routes.meta import PUBLIC_ENDPOINTS
 from .services import get_important_email_watcher, get_trigger_scheduler
 
 
@@ -67,13 +66,23 @@ register_exception_handlers(app)
 app.include_router(api_router)
 
 
+def _public_endpoints(request: Request) -> list[str]:
+    return sorted(
+        {
+            route.path
+            for route in request.app.routes
+            if getattr(route, "include_in_schema", False) and route.path.startswith("/api/")
+        }
+    )
+
+
 @app.get("/")
-def root(settings: Settings = Depends(get_settings)) -> RootResponse:
+def root(request: Request, settings: Settings = Depends(get_settings)) -> RootResponse:
     return RootResponse(
         status="ok",
         service="openpoke",
         version=settings.app_version,
-        endpoints=PUBLIC_ENDPOINTS,
+        endpoints=_public_endpoints(request),
     )
 
 

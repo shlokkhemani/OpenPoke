@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import status
 from fastapi.responses import JSONResponse
 
-from ..config import Settings
+from ..config import Settings, get_settings
 from ..logging_config import logger
-from ..models import GmailConnectPayload, GmailFetchPayload, GmailStatusPayload
+from ..models import GmailConnectPayload, GmailStatusPayload
 from ..utils import error_response
 
 
@@ -37,6 +38,10 @@ def _load_gmail_user_id() -> Optional[str]:
     return None
 
 
+_CLIENT_LOCK = threading.Lock()
+_CLIENT: Optional[Any] = None
+
+
 def _gmail_import_client():
     try:
         from composio import Composio  # type: ignore
@@ -44,6 +49,27 @@ def _gmail_import_client():
         return Composio
     except Exception as exc:  # pragma: no cover - optional dependency
         raise RuntimeError("Composio SDK not installed on server. pip install composio") from exc
+
+
+def _get_composio_client(settings: Optional[Settings] = None):
+    global _CLIENT
+    if _CLIENT is not None:
+        return _CLIENT
+
+    with _CLIENT_LOCK:
+        if _CLIENT is None:
+            resolved_settings = settings or get_settings()
+            Composio = _gmail_import_client()
+            api_key = resolved_settings.composio_api_key
+            try:
+                _CLIENT = Composio(api_key=api_key) if api_key else Composio()
+            except TypeError as exc:
+                if api_key:
+                    raise RuntimeError(
+                        "Installed Composio SDK does not accept the api_key argument; upgrade the SDK or remove COMPOSIO_API_KEY."
+                    ) from exc
+                _CLIENT = Composio()
+    return _CLIENT
 
 
 def _extract_email(obj: Any) -> Optional[str]:
@@ -80,8 +106,6 @@ def _extract_email(obj: Any) -> Optional[str]:
             if isinstance(current, str) and "@" in current:
                 return current
     return None
-
-
 def initiate_connect(payload: GmailConnectPayload, settings: Settings) -> JSONResponse:
     auth_config_id = payload.auth_config_id or settings.composio_gmail_auth_config_id or ""
     if not auth_config_id:
@@ -92,8 +116,7 @@ def initiate_connect(payload: GmailConnectPayload, settings: Settings) -> JSONRe
 
     user_id = payload.user_id or f"web-{os.getpid()}"
     try:
-        Composio = _gmail_import_client()
-        client = Composio()
+        client = _get_composio_client(settings)
         req = client.connected_accounts.initiate(user_id=user_id, auth_config_id=auth_config_id)
         data = {
             "ok": True,
@@ -119,8 +142,7 @@ def fetch_status(payload: GmailStatusPayload) -> JSONResponse:
         )
 
     try:
-        Composio = _gmail_import_client()
-        client = Composio()
+        client = _get_composio_client()
         account: Any = None
         if payload.connection_request_id:
             try:
@@ -219,8 +241,7 @@ def execute_gmail_tool(
     prepared_arguments.setdefault("user_id", "me")
 
     try:
-        Composio = _gmail_import_client()
-        client = Composio()
+        client = _get_composio_client()
         result = client.client.tools.execute(
             tool_name,
             user_id=composio_user_id,
@@ -233,34 +254,3 @@ def execute_gmail_tool(
             extra={"tool": tool_name, "user_id": composio_user_id},
         )
         raise RuntimeError(f"{tool_name} invocation failed: {exc}") from exc
-
-
-def fetch_emails(payload: GmailFetchPayload) -> JSONResponse:
-    arguments: Dict[str, Any] = (
-        {k: v for k, v in (payload.arguments or {}).items() if v is not None}
-        if isinstance(payload.arguments, dict)
-        else {}
-    )
-
-    arguments.setdefault("max_results", payload.max_results if payload.max_results is not None else 3)
-    arguments.setdefault(
-        "include_payload",
-        payload.include_payload if payload.include_payload is not None else True,
-    )
-    arguments.setdefault("verbose", payload.verbose if payload.verbose is not None else False)
-    arguments.setdefault("user_id", "me")
-
-    try:
-        response = execute_gmail_tool(
-            "GMAIL_FETCH_EMAILS",
-            payload.user_id,
-            arguments=arguments,
-        )
-        return JSONResponse({"ok": True, "response": response})
-    except Exception as exc:
-        logger.exception("gmail fetch failed", extra={"user_id": payload.user_id})
-        return error_response(
-            "Failed to fetch emails",
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc),
-        )

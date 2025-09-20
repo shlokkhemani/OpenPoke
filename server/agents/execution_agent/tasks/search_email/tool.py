@@ -75,7 +75,7 @@ def _validate_openrouter_config() -> Tuple[Optional[str], Optional[str]]:
     api_key = settings.openrouter_api_key
     if not api_key:
         return None, ERROR_OPENROUTER_NOT_CONFIGURED
-    return api_key, settings.default_model or "openrouter/auto"
+    return api_key, settings.execution_agent_search_model
 
 
 def build_registry(agent_name: str) -> Dict[str, Callable[..., Any]]:  # noqa: ARG001

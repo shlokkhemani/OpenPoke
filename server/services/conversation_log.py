@@ -15,6 +15,10 @@ from .timezone_store import get_timezone_store
 from .summarization import get_working_memory_log
 
 
+_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+_CONVERSATION_LOG_PATH = _DATA_DIR / "conversation" / "poke_conversation.log"
+
+
 class TranscriptFormatter(Protocol):
     def __call__(self, tag: str, timestamp: str, payload: str) -> str:  # pragma: no cover - typing protocol
         ...
@@ -216,7 +220,7 @@ class ConversationLog:
             )
 
 
-_conversation_log = ConversationLog(get_settings().resolved_conversation_log_path)
+_conversation_log = ConversationLog(_CONVERSATION_LOG_PATH)
 
 
 def get_conversation_log() -> ConversationLog:

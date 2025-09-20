@@ -12,9 +12,20 @@ OpenPoke is a simplified, open-source take on [Interaction Company’s](https://
 - Node.js 18+
 - npm 9+
 
-## Setup
-1. Copy the shared environment file: `cp .env.example .env` and fill in OpenRouter and Composio keys.
-2. (Recommended) create and activate a virtual environment in the repo root:
+## Quickstart
+1. **Clone and enter the repo.**
+   ```bash
+   git clone <repo-url>
+   cd openpoke
+   ```
+2. **Create a shared env file.** Copy the template and open it in your editor:
+   ```bash
+   cp .env.example .env
+   ```
+3. **Fetch API keys and drop them into `.env`.**
+   - **OpenRouter**: create an account at [openrouter.ai](https://openrouter.ai/), generate an API key, and paste it into `OPENROUTER_API_KEY`.
+   - **Composio (optional Gmail tooling)**: sign in at [composio.com](https://www.composio.com/), create an API key, locate your Gmail auth config ID, and populate `COMPOSIO_API_KEY` / `COMPOSIO_GMAIL_AUTH_CONFIG_ID`.
+4. **(Recommended) create and activate a Python virtualenv:**
    ```bash
    python3 -m venv .venv
    source .venv/bin/activate
@@ -24,20 +35,25 @@ OpenPoke is a simplified, open-source take on [Interaction Company’s](https://
    python -m venv .venv
    .\.venv\Scripts\Activate.ps1
    ```
-3. Install backend deps: `pip install -r server/requirements.txt`.
-4. Install frontend deps: `npm install --prefix web`.
+5. **Install backend dependencies:**
+   ```bash
+   pip install -r server/requirements.txt
+   ```
+6. **Install frontend dependencies:**
+   ```bash
+   npm install --prefix web
+   ```
+7. **Start the FastAPI server:**
+   ```bash
+   python -m server.server --reload
+   ```
+8. **Start the Next.js app (new terminal):**
+   ```bash
+   npm run dev --prefix web
+   ```
+9. **Connect Gmail for email workflows.** With both services running, open [http://localhost:3000](http://localhost:3000), head to *Settings → Gmail*, and complete the Composio OAuth flow. Email tools, triggers, and monitors rely on this step.
 
-## API Keys
-- **OpenRouter**: create an account at [openrouter.ai](https://openrouter.ai/), generate an API key from the dashboard, and place it in `OPENROUTER_API_KEY` inside `.env`. The backend reads this value for all LLM calls.
-- **Composio (Gmail tooling)**: log into the [Composio Console](https://www.composio.com/), create an API key, and note the Gmail auth config ID from the Gmail integration setup. Set `COMPOSIO_API_KEY` to the API token and `COMPOSIO_GMAIL_AUTH_CONFIG_ID` to the config identifier when you want Gmail actions enabled. 
-
-## Development
-Open two terminals after installing dependencies:
-
-- Backend: `python -m server.server --reload`
-- Frontend: `npm run dev --prefix web`
-
-The web app proxies API calls to the Python server using the values in `.env`.
+The web app proxies API calls to the Python server using the values in `.env`, so keeping both processes running is required for end-to-end flows.
 
 ## Project Layout
 - `server/` – FastAPI application and agents

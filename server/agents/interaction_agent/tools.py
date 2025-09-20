@@ -190,13 +190,12 @@ def send_draft(
 
 
 def wait(reason: str) -> ToolResult:
-    """Wait silently and add a <wait> log entry that is not visible to the user."""
+    """Wait silently and add a wait log entry that is not visible to the user."""
     
     log = get_conversation_log()
     
-    # Add wait entry to conversation log (not visible to frontend)
-    wait_message = f"<wait>{reason}</wait>"
-    log.record_reply(wait_message)
+    # Record a dedicated wait entry so the UI knows to ignore it
+    log.record_wait(reason)
     
 
     return ToolResult(

@@ -143,6 +143,10 @@ class ConversationLog:
     def record_reply(self, content: str) -> None:
         self._append("poke_reply", content)
 
+    def record_wait(self, reason: str) -> None:
+        """Record a wait marker that should not reach the user-facing chat history."""
+        self._append("wait", reason)
+
     def to_chat_messages(self) -> List[ChatMessage]:
         messages: List[ChatMessage] = []
         for tag, timestamp, payload in self.iter_entries():
@@ -157,6 +161,9 @@ class ConversationLog:
                         role="assistant", content=payload, timestamp=normalized_timestamp
                     )
                 )
+            elif tag == "wait":
+                # Wait markers are orchestration metadata and must not surface to the user
+                continue
         return messages
 
     def clear(self) -> None:

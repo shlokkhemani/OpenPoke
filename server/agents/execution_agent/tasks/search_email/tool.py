@@ -25,6 +25,7 @@ from .schemas import (
     TASK_TOOL_NAME,
     get_completion_schema,
 )
+from .system_prompt import get_system_prompt
 
 # Constants
 MAX_LLM_ITERATIONS = 8
@@ -38,65 +39,6 @@ ERROR_TOOL_ARGUMENTS_INVALID = "Tool arguments must be an object"
 ERROR_ITERATION_LIMIT = "Email search orchestrator exceeded iteration limit"
 
 
-def _get_system_prompt() -> str:
-    """Generate system prompt with today's date for Gmail search assistant."""
-    today = datetime.now().strftime("%Y/%m/%d")
-    
-    return (
-        "You are an expert Gmail search assistant helping users find emails efficiently.\n"
-        f"\n"
-        f"## Current Context:\n"
-        f"- Today's date: {today}\n"
-        f"- Use this date as reference for relative time queries (e.g., 'recent', 'today', 'this week')\n"
-        "\n"
-        "## Available Tools:\n"
-        "- `gmail_fetch_emails`: Search Gmail using advanced search parameters\n"
-        "- `return_search_results`: Return the final list of relevant message IDs\n"
-        "\n"
-        "## Gmail Search Strategy:\n"
-        "1. **Use Gmail's powerful search operators** to create precise queries:\n"
-        "   - `from:email@domain.com` - emails from specific sender\n"
-        "   - `to:email@domain.com` - emails to specific recipient\n"
-        "   - `subject:keyword` - emails with specific subject content\n"
-        "   - `has:attachment` - emails with attachments\n"
-        "   - `after:YYYY/MM/DD` and `before:YYYY/MM/DD` - date ranges\n"
-        "   - `is:unread`, `is:read`, `is:important` - status filters\n"
-        "   - `in:inbox`, `in:sent`, `in:trash` - location filters\n"
-        "   - `larger:10M`, `smaller:1M` - size filters\n"
-        "   - `\"exact phrase\"` - exact phrase matching\n"
-        "   - `OR`, `-` (NOT), `()` for complex boolean logic\n"
-        "\n"
-        "2. **Run multiple searches in parallel** when the user's request suggests different approaches:\n"
-        "   - Search by sender AND by keywords simultaneously\n"
-        "   - Try relevant date ranges in parallel\n"
-        "   - Search multiple related terms or variations\n"
-        "   - Combine broad and specific queries\n"
-        "\n"
-        "3. **Think strategically** about what search parameters would be most relevant:\n"
-        f"   - For \"recent emails from John\": `from:john after:{today}`\n"
-        "   - For \"meeting invites\": `subject:meeting OR subject:invite has:attachment`\n"
-        "   - For \"large files\": `has:attachment larger:5M`\n"
-        "   - For \"unread important emails\": `is:unread is:important`\n"
-        f"   - For \"today's emails\": `after:{today}`\n"
-        f"   - For \"this week's emails\": Use date ranges based on today ({today})\n"
-        "\n"
-        "## Email Content Processing:\n"
-        "- Each email includes `clean_text` - processed, readable content from HTML/plain text\n"
-        "- Clean text has tracking pixels removed, URLs truncated, and formatting optimized\n"
-        "- Attachment information is available: `has_attachments`, `attachment_count`, `attachment_filenames`\n"
-        "- Email timestamps are automatically converted to the user's preferred timezone\n"
-        "- Use clean text content to understand email context and relevance\n"
-        "\n"
-        "## Your Process:\n"
-        "1. **Analyze** the user's request to identify key search criteria\n"
-        "2. **Search strategically** using multiple targeted Gmail queries with appropriate operators\n"
-        "3. **Review content** - examine the `clean_text` field to understand email relevance\n"
-        "4. **Consider attachments** - factor in attachment information when relevant to the query\n"
-        "5. **Refine searches** - run additional queries if needed based on content analysis\n"
-        "6. **Select results** - call `return_search_results` with message IDs that best match intent\n"
-        "\n"
-        "Be thorough and strategic - use Gmail's search power AND content analysis to find exactly what the user needs!"
-    )
 
 _COMPLETION_TOOL_SCHEMA = get_completion_schema()
 _LOG_STORE = get_execution_agent_logs()
@@ -203,7 +145,7 @@ async def _run_email_search(
         response = await request_chat_completion(
             model=model,
             messages=messages,
-            system=_get_system_prompt(),
+            system=get_system_prompt(),
             api_key=api_key,
             tools=[GMAIL_FETCH_EMAILS_SCHEMA, _COMPLETION_TOOL_SCHEMA],
         )
@@ -343,9 +285,12 @@ async def _perform_search(
             error=ERROR_QUERY_REQUIRED,
         )
 
+    # Use LLM-provided max_results or default to 10
+    max_results = arguments.get("max_results", 10)
+    
     composio_arguments = {
         "query": query,
-        "max_results": 10,  # Limit results per query for manageable LLM responses
+        "max_results": max_results,  # Use LLM-provided value or default 10
         "include_payload": True,  # REQUIRED: Need full email content for text cleaning
         "verbose": True,  # REQUIRED: Need parsed content including messageText
         "include_spam_trash": arguments.get("include_spam_trash", False),  # Default: False
@@ -355,7 +300,7 @@ async def _perform_search(
 
     _LOG_STORE.record_action(
         TASK_TOOL_NAME,
-        description=f"{TASK_TOOL_NAME} search | query={query}",
+        description=f"{TASK_TOOL_NAME} search | query={query} | max_results={max_results}",
     )
 
     try:

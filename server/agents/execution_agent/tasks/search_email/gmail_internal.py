@@ -23,6 +23,12 @@ GMAIL_FETCH_EMAILS_SCHEMA = {
                     "type": "string",
                     "description": "Gmail search query (same syntax as Gmail UI).",
                 },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Maximum number of emails to return. Default: 10. Use higher values (20-50) only when absolutely necessary for comprehensive searches like 'all important emails this month'.",
+                    "minimum": 1,
+                    "maximum": 100,
+                },
                 "include_spam_trash": {
                     "type": "boolean",
                     "description": "Include spam and trash messages. Default: false.",

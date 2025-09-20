@@ -2,16 +2,14 @@ from __future__ import annotations
 
 import re
 import threading
-from datetime import datetime
 from html import escape, unescape
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Protocol, Tuple
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..config import get_settings
 from ..logging_config import logger
 from ..models import ChatMessage
-from .timezone_store import get_timezone_store
+from ..utils.timezones import now_in_user_timezone
 from .summarization import get_working_memory_log
 
 
@@ -32,22 +30,6 @@ def _encode_payload(payload: str) -> str:
 
 def _decode_payload(payload: str) -> str:
     return unescape(payload).replace("\\n", "\n")
-
-
-def _current_timestamp() -> str:
-    store = get_timezone_store()
-    tz_name = store.get_timezone()
-    try:
-        tz = ZoneInfo(tz_name)
-    except ZoneInfoNotFoundError:
-        logger.warning("unknown timezone; defaulting to UTC", extra={"timezone": tz_name})
-        tz = ZoneInfo("UTC")
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.warning(
-            "timezone resolution failed; defaulting to UTC", extra={"error": str(exc)}
-        )
-        tz = ZoneInfo("UTC")
-    return datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _default_formatter(tag: str, timestamp: str, payload: str) -> str:
@@ -75,7 +57,7 @@ class ConversationLog:
             logger.warning("conversation log directory creation failed", extra={"error": str(exc)})
 
     def _append(self, tag: str, payload: str) -> str:
-        timestamp = _current_timestamp()
+        timestamp = now_in_user_timezone("%Y-%m-%d %H:%M:%S")
         entry = self._formatter(tag, timestamp, str(payload))
         with self._lock:
             try:

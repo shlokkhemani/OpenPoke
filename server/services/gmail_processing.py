@@ -9,10 +9,9 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from bs4 import BeautifulSoup
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..logging_config import logger
-from .timezone_store import get_timezone_store
+from ..utils.timezones import convert_to_user_timezone
 
 
 class EmailTextCleaner:
@@ -255,24 +254,6 @@ class ProcessedEmail:
 # ----------------------------------------------------------------------
 # Helpers shared across modules
 # ----------------------------------------------------------------------
-
-def convert_to_user_timezone(dt: datetime) -> datetime:
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-
-    store = get_timezone_store()
-    user_tz_name = store.get_timezone("UTC")
-
-    try:
-        user_tz = ZoneInfo(user_tz_name)
-        return dt.astimezone(user_tz)
-    except ZoneInfoNotFoundError:
-        logger.warning("Invalid user timezone; defaulting to UTC", extra={"timezone": user_tz_name})
-        return dt.astimezone(ZoneInfo("UTC"))
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.warning("Timezone conversion failed; defaulting to UTC", extra={"error": str(exc)})
-        return dt.astimezone(ZoneInfo("UTC"))
-
 
 def parse_gmail_timestamp(raw: Optional[str]) -> Optional[datetime]:
     if not raw:

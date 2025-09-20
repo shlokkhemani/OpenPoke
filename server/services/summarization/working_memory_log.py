@@ -7,10 +7,9 @@ from datetime import datetime
 from html import escape, unescape
 from pathlib import Path
 from typing import List, Optional, Tuple
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ...logging_config import logger
-from ..timezone_store import get_timezone_store
+from ...utils.timezones import now_in_user_timezone
 from .state import LogEntry, SummaryState
 
 
@@ -36,17 +35,7 @@ def _format_line(tag: str, payload: str, timestamp: Optional[str] = None) -> str
 
 
 def _current_timestamp() -> str:
-    store = get_timezone_store()
-    tz_name = store.get_timezone()
-    try:
-        tz = ZoneInfo(tz_name)
-    except ZoneInfoNotFoundError:
-        logger.warning("unknown timezone; defaulting to UTC", extra={"timezone": tz_name})
-        tz = ZoneInfo("UTC")
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.warning("timezone resolution failed; defaulting to UTC", extra={"error": str(exc)})
-        tz = ZoneInfo("UTC")
-    return datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S")
+    return now_in_user_timezone("%Y-%m-%d %H:%M:%S")
 
 
 class WorkingMemoryLog:

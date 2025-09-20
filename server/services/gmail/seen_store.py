@@ -8,7 +8,7 @@ from collections import deque
 from pathlib import Path
 from typing import Deque, Iterable, List, Optional, Set
 
-from ..logging_config import logger
+from ...logging_config import logger
 
 
 class GmailSeenStore:

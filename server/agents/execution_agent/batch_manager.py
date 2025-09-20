@@ -36,13 +36,14 @@ class _BatchState:
 class ExecutionBatchManager:
     """Run execution agents and deliver their combined outcome."""
 
+    # Initialize batch manager with timeout and coordination state for execution agents
     def __init__(self, timeout_seconds: int = 90) -> None:
         self.timeout_seconds = timeout_seconds
         self._pending: Dict[str, PendingExecution] = {}
         self._batch_lock = asyncio.Lock()
         self._batch_state: Optional[_BatchState] = None
 
-    # Execute an agent asynchronously and coordinate results across multiple agents
+    # Run execution agent with timeout handling and batch coordination for interaction agent
     async def execute_agent(
         self,
         agent_name: str,
@@ -87,7 +88,7 @@ class ExecutionBatchManager:
         await self._complete_execution(batch_id, result, agent_name)
         return result
 
-    # Register a new execution with the batch manager for coordinated processing
+    # Add execution request to current batch or create new batch if none exists
     async def _register_pending_execution(
         self,
         agent_name: str,
@@ -113,6 +114,7 @@ class ExecutionBatchManager:
 
             return batch_id
 
+    # Store execution result and send combined batch to interaction agent when complete
     async def _complete_execution(
         self,
         batch_id: str,
@@ -141,6 +143,7 @@ class ExecutionBatchManager:
         if dispatch_payload:
             await self._dispatch_to_interaction_agent(dispatch_payload)
 
+    # Return list of currently pending execution requests for monitoring purposes
     def get_pending_executions(self) -> List[Dict[str, str]]:
         """Expose pending executions for observability."""
 
@@ -155,6 +158,7 @@ class ExecutionBatchManager:
             for pending in self._pending.values()
         ]
 
+    # Clean up all pending executions and batch state on shutdown
     async def shutdown(self) -> None:
         """Clear pending bookkeeping (no background work remains)."""
 
@@ -162,6 +166,7 @@ class ExecutionBatchManager:
         async with self._batch_lock:
             self._batch_state = None
 
+    # Format multiple execution results into single message for interaction agent
     def _format_batch_payload(self, results: List[ExecutionResult]) -> str:
         """Render execution results into the interaction-agent format."""
 
@@ -172,6 +177,7 @@ class ExecutionBatchManager:
             entries.append(f"[{status}] {result.agent_name}: {response_text}")
         return "\n".join(entries)
 
+    # Forward combined execution results to interaction agent for user response generation
     async def _dispatch_to_interaction_agent(self, payload: str) -> None:
         """Send the aggregated execution summary to the interaction agent."""
 

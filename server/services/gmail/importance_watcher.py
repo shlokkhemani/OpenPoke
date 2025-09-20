@@ -5,14 +5,23 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
-from .gmail import _load_gmail_user_id, execute_gmail_tool
-from .gmail_processing import EmailTextCleaner, ProcessedEmail, parse_gmail_fetch_response
-from .gmail_seen_store import GmailSeenStore
-from .important_email_classifier import classify_email_importance
-from ..agents.interaction_agent.runtime import InteractionAgentRuntime
-from ..logging_config import logger
+from .client import _load_gmail_user_id, execute_gmail_tool
+from .processing import EmailTextCleaner, ProcessedEmail, parse_gmail_fetch_response
+from .seen_store import GmailSeenStore
+from .importance_classifier import classify_email_importance
+from ...logging_config import logger
+
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from ...agents.interaction_agent.runtime import InteractionAgentRuntime
+
+
+def _resolve_interaction_runtime() -> "InteractionAgentRuntime":
+    from ...agents.interaction_agent.runtime import InteractionAgentRuntime
+
+    return InteractionAgentRuntime()
 
 
 DEFAULT_POLL_INTERVAL_SECONDS = 60.0
@@ -21,7 +30,7 @@ DEFAULT_MAX_RESULTS = 50
 DEFAULT_SEEN_LIMIT = 300
 
 
-_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 _DEFAULT_SEEN_PATH = _DATA_DIR / "gmail_seen.json"
 
 
@@ -162,7 +171,7 @@ class ImportantEmailWatcher:
         )
 
     async def _dispatch_summary(self, summary: str) -> None:
-        runtime = InteractionAgentRuntime()
+        runtime = _resolve_interaction_runtime()
         try:
             await runtime.handle_agent_message(summary)
         except Exception as exc:  # pragma: no cover - defensive

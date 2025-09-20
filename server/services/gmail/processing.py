@@ -10,8 +10,8 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from bs4 import BeautifulSoup
 
-from ..logging_config import logger
-from ..utils.timezones import convert_to_user_timezone
+from ...logging_config import logger
+from ...utils.timezones import convert_to_user_timezone
 
 
 class EmailTextCleaner:

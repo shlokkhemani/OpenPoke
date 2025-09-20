@@ -9,21 +9,34 @@ from typing import Any, Dict, Optional
 from fastapi import status
 from fastapi.responses import JSONResponse
 
-from ..config import Settings, get_settings
-from ..logging_config import logger
-from ..models import GmailConnectPayload, GmailStatusPayload
-from ..utils import error_response
+from ...config import Settings, get_settings
+from ...logging_config import logger
+from ...models import GmailConnectPayload, GmailStatusPayload
+from ...utils import error_response
 
 
 # Persist Gmail user ID to disk for session continuity across restarts
+_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+_USER_ID_PATH = _DATA_DIR / "gmail_user_id.txt"
+
+
+def _normalized(value: Optional[str]) -> str:
+    return (value or "").strip()
+
+
 def _save_gmail_user_id(user_id: str) -> None:
     """Save the Gmail user_id to a file for future use."""
+    sanitized = _normalized(user_id)
+    if not sanitized:
+        return
     try:
-        data_dir = Path("data")
-        data_dir.mkdir(exist_ok=True)
-        user_id_file = data_dir / "gmail_user_id.txt"
-        user_id_file.write_text(user_id)
-        logger.info(f"Saved Gmail user_id: {user_id}")
+        _DATA_DIR.mkdir(exist_ok=True)
+        if _USER_ID_PATH.exists():
+            existing = _USER_ID_PATH.read_text(encoding="utf-8").strip()
+            if existing == sanitized:
+                return
+        _USER_ID_PATH.write_text(sanitized, encoding="utf-8")
+        logger.info(f"Saved Gmail user_id: {sanitized}")
     except Exception as e:
         logger.error(f"Failed to save Gmail user_id: {e}")
 
@@ -32,12 +45,21 @@ def _save_gmail_user_id(user_id: str) -> None:
 def _load_gmail_user_id() -> Optional[str]:
     """Load the saved Gmail user_id."""
     try:
-        user_id_file = Path("data") / "gmail_user_id.txt"
-        if user_id_file.exists():
-            return user_id_file.read_text().strip()
+        if _USER_ID_PATH.exists():
+            return _normalized(_USER_ID_PATH.read_text(encoding="utf-8")) or None
     except Exception as e:
         logger.error(f"Failed to load Gmail user_id: {e}")
     return None
+
+
+def _ensure_user_id_saved(user_id: Optional[str]) -> None:
+    sanitized = _normalized(user_id)
+    if not sanitized:
+        return
+    existing = _load_gmail_user_id()
+    if existing == sanitized:
+        return
+    _save_gmail_user_id(sanitized)
 
 
 _CLIENT_LOCK = threading.Lock()
@@ -119,6 +141,7 @@ def initiate_connect(payload: GmailConnectPayload, settings: Settings) -> JSONRe
         )
 
     user_id = payload.user_id or f"web-{os.getpid()}"
+    _ensure_user_id_saved(user_id)
     try:
         client = _get_composio_client(settings)
         req = client.connected_accounts.initiate(user_id=user_id, auth_config_id=auth_config_id)
@@ -140,27 +163,37 @@ def initiate_connect(payload: GmailConnectPayload, settings: Settings) -> JSONRe
 
 # Check Gmail connection status and retrieve user account information
 def fetch_status(payload: GmailStatusPayload) -> JSONResponse:
-    if not payload.connection_request_id and not payload.user_id:
+    connection_request_id = _normalized(payload.connection_request_id)
+    user_id = _normalized(payload.user_id)
+
+    if not connection_request_id and not user_id:
+        cached_id = _load_gmail_user_id()
+        user_id = _normalized(cached_id)
+
+    if not connection_request_id and not user_id:
         return error_response(
             "Missing connection_request_id or user_id",
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
+    if user_id:
+        _ensure_user_id_saved(user_id)
+
     try:
         client = _get_composio_client()
         account: Any = None
-        if payload.connection_request_id:
+        if connection_request_id:
             try:
-                account = client.connected_accounts.wait_for_connection(payload.connection_request_id, timeout=2.0)
+                account = client.connected_accounts.wait_for_connection(connection_request_id, timeout=2.0)
             except Exception:
                 try:
-                    account = client.connected_accounts.get(payload.connection_request_id)
+                    account = client.connected_accounts.get(connection_request_id)
                 except Exception:
                     account = None
-        if account is None and payload.user_id:
+        if account is None and user_id:
             try:
                 items = client.connected_accounts.list(
-                    user_ids=[payload.user_id], toolkit_slugs=["GMAIL"], statuses=["ACTIVE"]
+                    user_ids=[user_id], toolkit_slugs=["GMAIL"], statuses=["ACTIVE"]
                 )
                 data = getattr(items, "data", None)
                 if data is None and isinstance(items, dict):
@@ -172,15 +205,15 @@ def fetch_status(payload: GmailStatusPayload) -> JSONResponse:
         status_value = None
         email = None
         connected = False
+
         if account is not None:
             status_value = getattr(account, "status", None) or (account.get("status") if isinstance(account, dict) else None)
             normalized = (status_value or "").upper()
             connected = normalized in {"CONNECTED", "SUCCESS", "SUCCESSFUL", "ACTIVE", "COMPLETED"}
             email = _extract_email(account)
 
-            # Save user_id when Gmail is successfully connected
-            if connected and payload.user_id:
-                _save_gmail_user_id(payload.user_id)
+            if connected and user_id:
+                _ensure_user_id_saved(user_id)
 
         return JSONResponse(
             {
@@ -188,14 +221,15 @@ def fetch_status(payload: GmailStatusPayload) -> JSONResponse:
                 "connected": bool(connected),
                 "status": status_value or "UNKNOWN",
                 "email": email,
+                "user_id": user_id,
             }
         )
     except Exception as exc:
         logger.exception(
             "gmail status failed",
             extra={
-                "connection_request_id": payload.connection_request_id,
-                "user_id": payload.user_id,
+                "connection_request_id": connection_request_id,
+                "user_id": user_id,
             },
         )
         return error_response(

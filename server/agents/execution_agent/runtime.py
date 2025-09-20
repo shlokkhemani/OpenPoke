@@ -27,6 +27,7 @@ class ExecutionAgentRuntime:
 
     MAX_TOOL_ITERATIONS = 8
 
+    # Initialize execution agent runtime with settings, tools, and agent instance
     def __init__(self, agent_name: str):
         settings = get_settings()
         self.agent = ExecutionAgent(agent_name)
@@ -38,7 +39,7 @@ class ExecutionAgentRuntime:
         if not self.api_key:
             raise ValueError("OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.")
 
-    # Execute a specialized task agent with the given instructions
+    # Main execution loop for running agent with LLM calls and tool execution
     async def execute(self, instructions: str) -> ExecutionResult:
         """Execute the agent with given instructions."""
         try:
@@ -147,6 +148,7 @@ class ExecutionAgentRuntime:
                 error=error_msg
             )
 
+    # Execute OpenRouter API call with system prompt, messages, and optional tool schemas
     async def _make_llm_call(self, system_prompt: str, messages: List[Dict], with_tools: bool) -> Dict:
         """Make an LLM call."""
         tools_to_send = self.tool_schemas if with_tools else None
@@ -159,6 +161,7 @@ class ExecutionAgentRuntime:
             tools=tools_to_send
         )
 
+    # Parse and validate tool calls from LLM response into structured format
     def _extract_tool_calls(self, raw_tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Extract tool calls from an assistant message."""
         tool_calls: List[Dict[str, Any]] = []
@@ -183,6 +186,7 @@ class ExecutionAgentRuntime:
 
         return tool_calls
 
+    # Safely convert objects to JSON with fallback to string representation
     def _safe_json_dump(self, payload: Any) -> str:
         """Serialize payload to JSON, falling back to string representation."""
         try:
@@ -190,6 +194,7 @@ class ExecutionAgentRuntime:
         except TypeError:
             return str(payload)
 
+    # Format tool execution results into JSON structure for LLM consumption
     def _format_tool_result(
         self,
         tool_name: str,
@@ -215,6 +220,7 @@ class ExecutionAgentRuntime:
             }
         return self._safe_json_dump(payload)
 
+    # Execute tool function from registry with error handling and async support
     async def _execute_tool(self, tool_name: str, arguments: Dict) -> Tuple[bool, Any]:
         """Execute a tool. Returns (success, result)."""
         tool_func = self.tool_registry.get(tool_name)

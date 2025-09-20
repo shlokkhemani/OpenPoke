@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from ...logging_config import logger
+from ....logging_config import logger
 from .summarizer import summarize_conversation
 
 _pending = False

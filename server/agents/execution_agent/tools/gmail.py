@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Callable, Dict, List, Optional
 
-from server.services.execution_log import get_execution_agent_logs
+from server.services.execution import get_execution_agent_logs
 from server.services.gmail import _load_gmail_user_id, execute_gmail_tool
 
 _GMAIL_AGENT_NAME = "gmail-execution-agent"
@@ -314,12 +314,14 @@ _SCHEMAS: List[Dict[str, Any]] = [
 _LOG_STORE = get_execution_agent_logs()
 
 
+# Return Gmail tool schemas
 def get_schemas() -> List[Dict[str, Any]]:
     """Return Gmail tool schemas."""
     
     return _SCHEMAS
 
 
+# Execute a Gmail tool and record the action for the execution agent journal
 def _execute(tool_name: str, composio_user_id: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     """Execute a Gmail tool and record the action for the execution agent journal."""
 
@@ -341,6 +343,7 @@ def _execute(tool_name: str, composio_user_id: str, arguments: Dict[str, Any]) -
     return result
 
 
+# Create a Gmail draft via Composio with support for HTML, attachments, and threading
 def gmail_create_draft(
     recipient_email: str,
     subject: str,
@@ -369,6 +372,7 @@ def gmail_create_draft(
     return _execute("GMAIL_CREATE_EMAIL_DRAFT", composio_user_id, arguments)
 
 
+# Send a previously created Gmail draft using Composio
 def gmail_execute_draft(
     draft_id: str,
 ) -> Dict[str, Any]:
@@ -379,6 +383,7 @@ def gmail_execute_draft(
     return _execute("GMAIL_SEND_DRAFT", composio_user_id, arguments)
 
 
+# Forward an existing Gmail message with optional additional context
 def gmail_forward_email(
     message_id: str,
     recipient_email: str,
@@ -395,6 +400,7 @@ def gmail_forward_email(
     return _execute("GMAIL_FORWARD_MESSAGE", composio_user_id, arguments)
 
 
+# Send a reply within an existing Gmail thread via Composio
 def gmail_reply_to_thread(
     thread_id: str,
     recipient_email: str,
@@ -421,6 +427,7 @@ def gmail_reply_to_thread(
     return _execute("GMAIL_REPLY_TO_THREAD", composio_user_id, arguments)
 
 
+# Delete a specific Gmail draft using the Composio Gmail integration
 def gmail_delete_draft(
     draft_id: str,
 ) -> Dict[str, Any]:
@@ -509,6 +516,7 @@ def gmail_search_people(
     return _execute("GMAIL_SEARCH_PEOPLE", composio_user_id, arguments)
 
 
+# Return Gmail tool callables
 def build_registry(agent_name: str) -> Dict[str, Callable[..., Any]]:  # noqa: ARG001
     """Return Gmail tool callables."""
     

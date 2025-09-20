@@ -4,17 +4,19 @@ from html import escape
 from pathlib import Path
 from typing import Dict, List
 
-from ...services.agent_roster import get_agent_roster
+from ...services.execution import get_agent_roster
 
 _prompt_path = Path(__file__).parent / "system_prompt.md"
 SYSTEM_PROMPT = _prompt_path.read_text(encoding="utf-8").strip()
 
 
+# Load and return the pre-defined system prompt from markdown file
 def build_system_prompt() -> str:
     """Return the static system prompt for the interaction agent."""
     return SYSTEM_PROMPT
 
 
+# Build structured message with conversation history, active agents, and current turn
 def prepare_message_with_history(
     latest_text: str,
     transcript: str,
@@ -31,6 +33,7 @@ def prepare_message_with_history(
     return [{"role": "user", "content": content}]
 
 
+# Format conversation transcript into XML tags for LLM context
 def _render_conversation_history(transcript: str) -> str:
     history = transcript.strip()
     if not history:
@@ -38,6 +41,7 @@ def _render_conversation_history(transcript: str) -> str:
     return f"<conversation_history>\n{history}\n</conversation_history>"
 
 
+# Format currently active execution agents into XML tags for LLM awareness
 def _render_active_agents() -> str:
     roster = get_agent_roster()
     roster.load()
@@ -54,6 +58,7 @@ def _render_active_agents() -> str:
     return "\n".join(rendered)
 
 
+# Wrap the current message in appropriate XML tags based on sender type
 def _render_current_turn(latest_text: str, message_type: str) -> str:
     tag = "new_agent_message" if message_type == "agent" else "new_user_message"
     body = latest_text.strip()

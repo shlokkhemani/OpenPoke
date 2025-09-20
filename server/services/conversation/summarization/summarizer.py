@@ -1,20 +1,23 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
-from ...config import get_settings
-from ...logging_config import logger
-from ...openrouter_client import OpenRouterError, request_chat_completion
-try:
-    from ..conversation_log import get_conversation_log
-except ImportError:  # pragma: no cover - fallback for circular import during module init
-    from importlib import import_module
-
-    get_conversation_log = lambda: import_module("server.services.conversation_log").get_conversation_log()
+from ....config import get_settings
+from ....logging_config import logger
+from ....openrouter_client import OpenRouterError, request_chat_completion
 from .prompt_builder import SummaryPrompt, build_summarization_prompt
 from .state import LogEntry, SummaryState
 from .working_memory_log import get_working_memory_log
+
+if TYPE_CHECKING:  # pragma: no cover - type checking only
+    from ..log import ConversationLog
+
+
+def _resolve_conversation_log() -> "ConversationLog":
+    from ..log import get_conversation_log
+
+    return get_conversation_log()
 
 
 def _collect_entries(log) -> List[LogEntry]:
@@ -72,7 +75,7 @@ async def summarize_conversation() -> bool:
     if not settings.summarization_enabled:
         return False
 
-    conversation_log = get_conversation_log()
+    conversation_log = _resolve_conversation_log()
     working_memory_log = get_working_memory_log()
 
     entries = _collect_entries(conversation_log)

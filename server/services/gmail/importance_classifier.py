@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, Optional
 
-from .gmail_processing import ProcessedEmail
-from ..config import get_settings
-from ..logging_config import logger
-from ..openrouter_client import OpenRouterError, request_chat_completion
+from .processing import ProcessedEmail
+from ...config import get_settings
+from ...logging_config import logger
+from ...openrouter_client import OpenRouterError, request_chat_completion
 
 
 _TOOL_NAME = "mark_email_importance"

@@ -104,13 +104,18 @@ export default function SettingsModal({
     }
   }
 
-  async function handleVerifyGmail() {
+  const handleVerifyGmail = useCallback(async () => {
     try {
       setGmailStatus('Checking connection…');
       const key = 'openpoke_user_id';
       let userId = '';
       try { userId = localStorage.getItem(key) || ''; } catch {}
       const connectionRequestId = gmailConnId || (typeof window !== 'undefined' ? localStorage.getItem('gmail_connection_request_id') || '' : '');
+      if (!connectionRequestId && !userId) {
+        setGmailConnected(false);
+        setGmailStatus('Not connected yet');
+        return;
+      }
       const resp = await fetch('/api/gmail/status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -125,6 +130,9 @@ export default function SettingsModal({
         try {
           localStorage.setItem('gmail_connected', 'true');
           if (email) localStorage.setItem('gmail_email', email);
+          if (typeof data?.user_id === 'string' && data.user_id) {
+            localStorage.setItem('openpoke_user_id', data.user_id);
+          }
         } catch {}
       } else {
         setGmailConnected(false);
@@ -133,12 +141,17 @@ export default function SettingsModal({
     } catch (e: any) {
       setGmailStatus(e?.message || 'Failed to check status');
     }
-  }
+  }, [gmailConnId]);
 
   useEffect(() => {
     setApiKey(settings.apiKey);
     setTimezone(settings.timezone);
   }, [settings]);
+
+  useEffect(() => {
+    if (!open) return;
+    void handleVerifyGmail();
+  }, [open, handleVerifyGmail]);
 
   if (!open) return null;
 

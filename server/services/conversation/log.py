@@ -6,14 +6,17 @@ from html import escape, unescape
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Protocol, Tuple
 
-from ..config import get_settings
-from ..logging_config import logger
-from ..models import ChatMessage
-from ..utils.timezones import now_in_user_timezone
-from .summarization import get_working_memory_log
+from ...config import get_settings
+from ...logging_config import logger
+from ...models import ChatMessage
+from ...utils.timezones import now_in_user_timezone
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover - used for type checkers only
+    from .summarization import WorkingMemoryLog
 
 
-_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 _CONVERSATION_LOG_PATH = _DATA_DIR / "conversation" / "poke_conversation.log"
 
 
@@ -37,6 +40,12 @@ def _default_formatter(tag: str, timestamp: str, payload: str) -> str:
     return f"<{tag} timestamp=\"{timestamp}\">{encoded}</{tag}>\n"
 
 
+def _resolve_working_memory_log() -> "WorkingMemoryLog":
+    from .summarization import get_working_memory_log
+
+    return get_working_memory_log()
+
+
 _ATTR_PATTERN = re.compile(r"(\w+)\s*=\s*\"([^\"]*)\"")
 
 
@@ -48,7 +57,7 @@ class ConversationLog:
         self._formatter = formatter
         self._lock = threading.Lock()
         self._ensure_directory()
-        self._working_memory_log = get_working_memory_log()
+        self._working_memory_log = _resolve_working_memory_log()
 
     def _ensure_directory(self) -> None:
         try:

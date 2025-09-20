@@ -6,9 +6,8 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from ...logging_config import logger
-from ...services.agent_roster import get_agent_roster
-from ...services.conversation_log import get_conversation_log
-from ...services.execution_log import get_execution_agent_logs
+from ...services.conversation import get_conversation_log
+from ...services.execution import get_agent_roster, get_execution_agent_logs
 from ..execution_agent.batch_manager import ExecutionBatchManager
 
 
@@ -109,6 +108,7 @@ TOOL_SCHEMAS = [
 _EXECUTION_BATCH_MANAGER = ExecutionBatchManager()
 
 
+# Create or reuse execution agent and dispatch instructions asynchronously
 def send_message_to_agent(agent_name: str, instructions: str) -> ToolResult:
     """Send instructions to an execution agent."""
     roster = get_agent_roster()
@@ -150,9 +150,9 @@ def send_message_to_agent(agent_name: str, instructions: str) -> ToolResult:
     )
 
 
+# Send immediate message to user and record in conversation history
 def send_message_to_user(message: str) -> ToolResult:
     """Record a user-visible reply in the conversation log."""
-
     log = get_conversation_log()
     log.record_reply(message)
 
@@ -164,13 +164,13 @@ def send_message_to_user(message: str) -> ToolResult:
     )
 
 
+# Format and record email draft for user review
 def send_draft(
     to: str,
     subject: str,
     body: str,
 ) -> ToolResult:
     """Record a draft update in the conversation log for the interaction agent."""
-
     log = get_conversation_log()
 
     message = f"To: {to}\nSubject: {subject}\n\n{body}"
@@ -189,9 +189,9 @@ def send_draft(
     )
 
 
+# Record silent wait state to avoid duplicate responses
 def wait(reason: str) -> ToolResult:
     """Wait silently and add a wait log entry that is not visible to the user."""
-    
     log = get_conversation_log()
     
     # Record a dedicated wait entry so the UI knows to ignore it
@@ -208,11 +208,13 @@ def wait(reason: str) -> ToolResult:
     )
 
 
+# Return predefined tool schemas for LLM function calling
 def get_tool_schemas():
     """Return OpenAI-compatible tool schemas."""
     return TOOL_SCHEMAS
 
 
+# Route tool calls to appropriate handlers with argument validation and error handling
 def handle_tool_call(name: str, arguments: Any) -> ToolResult:
     """Handle tool calls from interaction agent."""
     try:

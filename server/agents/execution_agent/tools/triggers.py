@@ -6,7 +6,7 @@ import json
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional
 
-from server.services.execution_log import get_execution_agent_logs
+from server.services.execution import get_execution_agent_logs
 from server.services.timezone_store import get_timezone_store
 from server.services.triggers import TriggerRecord, get_trigger_service
 
@@ -94,12 +94,14 @@ _LOG_STORE = get_execution_agent_logs()
 _TRIGGER_SERVICE = get_trigger_service()
 
 
+# Return trigger tool schemas
 def get_schemas() -> List[Dict[str, Any]]:
     """Return trigger tool schemas."""
 
     return _SCHEMAS
 
 
+# Convert TriggerRecord to dictionary payload for API responses
 def _trigger_record_to_payload(record: TriggerRecord) -> Dict[str, Any]:
     return {
         "id": record.id,
@@ -115,6 +117,7 @@ def _trigger_record_to_payload(record: TriggerRecord) -> Dict[str, Any]:
     }
 
 
+# Create a new trigger for the specified execution agent
 def _create_trigger_tool(
     *,
     agent_name: str,
@@ -160,6 +163,7 @@ def _create_trigger_tool(
     }
 
 
+# Update or pause an existing trigger owned by this execution agent
 def _update_trigger_tool(
     *,
     agent_name: str,
@@ -210,6 +214,7 @@ def _update_trigger_tool(
     }
 
 
+# List all triggers belonging to this execution agent
 def _list_triggers_tool(*, agent_name: str) -> Dict[str, Any]:
     try:
         records = _TRIGGER_SERVICE.list_triggers(agent_name=agent_name)
@@ -227,6 +232,7 @@ def _list_triggers_tool(*, agent_name: str) -> Dict[str, Any]:
     return {"triggers": [_trigger_record_to_payload(record) for record in records]}
 
 
+# Return trigger tool callables bound to a specific agent
 def build_registry(agent_name: str) -> Dict[str, Callable[..., Any]]:
     """Return trigger tool callables bound to a specific agent."""
 

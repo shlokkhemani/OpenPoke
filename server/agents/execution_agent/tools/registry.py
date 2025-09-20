@@ -8,6 +8,7 @@ from . import gmail, triggers
 from ..tasks import get_task_registry, get_task_schemas
 
 
+# Return OpenAI/OpenRouter-compatible tool schemas
 def get_tool_schemas() -> List[Dict[str, Any]]:
     """Return OpenAI/OpenRouter-compatible tool schemas."""
 
@@ -18,6 +19,7 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
     ]
 
 
+# Return Python callables for executing tools by name
 def get_tool_registry(agent_name: str) -> Dict[str, Callable[..., Any]]:
     """Return Python callables for executing tools by name."""
 

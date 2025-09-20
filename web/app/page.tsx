@@ -1,14 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import SettingsModal, { useSettings } from '@/components/SettingsModal';
-import clsx from 'clsx';
-
-type ChatBubble = {
-  id: string;
-  role: string;
-  text: string;
-};
+import { ChatHeader } from '@/components/chat/ChatHeader';
+import { ChatInput } from '@/components/chat/ChatInput';
+import { ChatMessages } from '@/components/chat/ChatMessages';
+import { ErrorBanner } from '@/components/chat/ErrorBanner';
+import { useAutoScroll } from '@/components/chat/useAutoScroll';
+import type { ChatBubble } from '@/components/chat/types';
 
 const POLL_INTERVAL_MS = 1500;
 
@@ -44,6 +43,12 @@ export default function Page() {
   const [messages, setMessages] = useState<ChatBubble[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+  const { scrollContainerRef, handleScroll } = useAutoScroll({
+    items: messages,
+    isWaiting: isWaitingForResponse,
+  });
+  const openSettings = useCallback(() => setOpen(true), [setOpen]);
+  const closeSettings = useCallback(() => setOpen(false), [setOpen]);
 
   const loadHistory = useCallback(async () => {
     try {
@@ -101,6 +106,7 @@ export default function Page() {
 
   const hasApiKey = settings.apiKey.trim().length > 0;
   const canSubmit = hasApiKey && input.trim().length > 0;
+  const inputPlaceholder = settings.apiKey ? 'iMessage…' : 'Add your OpenRouter API key in Settings to start';
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -189,130 +195,63 @@ export default function Page() {
     [loadHistory, settings.apiKey],
   );
 
-  const clearError = useCallback(() => setError(null), []);
+  const handleClearHistory = useCallback(async () => {
+    try {
+      const res = await fetch('/api/chat/history', { method: 'DELETE' });
+      if (!res.ok) {
+        console.error('Failed to clear chat history', res.statusText);
+        return;
+      }
+      setMessages([]);
+    } catch (err) {
+      console.error('Failed to clear chat history', err);
+    }
+  }, [setMessages]);
+
+  const triggerClearHistory = useCallback(() => {
+    void handleClearHistory();
+  }, [handleClearHistory]);
+
+  const handleSubmit = useCallback(async () => {
+    if (!canSubmit) return;
+    const value = input;
+    setInput('');
+    try {
+      await sendMessage(value);
+    } catch {
+      setInput(value);
+    }
+  }, [canSubmit, input, sendMessage, setInput]);
+
+  const handleInputChange = useCallback((value: string) => {
+    setInput(value);
+  }, [setInput]);
+
+  const clearError = useCallback(() => setError(null), [setError]);
 
   return (
     <main className="chat-bg min-h-screen p-4 sm:p-6">
       <div className="chat-wrap flex flex-col">
-        <header className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="grid h-9 w-9 place-items-center rounded-lg bg-brand-600 font-semibold text-white">
-              OP
-            </div>
-            <div>
-              <h1 className="text-lg font-semibold">OpenPoke Chat</h1>
-              <p className="text-xs text-gray-500">OpenRouter + Vercel AI SDK</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              className="rounded-md border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50"
-              onClick={() => setOpen(true)}
-            >
-              Settings
-            </button>
-            <button
-              className="rounded-md border border-gray-200 px-3 py-2 text-sm hover:bg-gray-50"
-              onClick={async () => {
-                try {
-                  const res = await fetch('/api/chat/history', { method: 'DELETE' });
-                  if (!res.ok) {
-                    console.error('Failed to clear chat history', res.statusText);
-                    return;
-                  }
-                  setMessages([]);
-                } catch (err) {
-                  console.error('Failed to clear chat history', err);
-                }
-              }}
-            >
-              Clear
-            </button>
-          </div>
-        </header>
+        <ChatHeader onOpenSettings={openSettings} onClearHistory={triggerClearHistory} />
 
         <div className="card flex-1 overflow-hidden">
-          <div className="flex h-[70vh] flex-col gap-2 overflow-y-auto p-4">
-            {messages.length === 0 && (
-              <div className="mx-auto my-12 max-w-sm text-center text-gray-500">
-                <h2 className="mb-2 text-xl font-semibold text-gray-700">Start a conversation</h2>
-                <p className="text-sm">
-                  Your messages will appear here. Add your OpenRouter key in Settings to get started.
-                </p>
-              </div>
-            )}
-            {messages.map((message, index) => {
-              const isUser = message.role === 'user';
-              const isDraft = message.role === 'draft';
-              const next = messages[index + 1];
-              const tail = !next || next.role !== message.role;
-
-              return (
-                <div key={message.id} className={clsx('flex', isUser ? 'justify-end' : 'justify-start')}>
-                  <div
-                    className={clsx(
-                      isUser ? 'bubble-out' : 'bubble-in',
-                      tail ? (isUser ? 'bubble-tail-out' : 'bubble-tail-in') : '',
-                      isDraft && 'whitespace-pre-wrap',
-                    )}
-                  >
-                    <span className={isDraft ? 'block whitespace-pre-wrap' : 'whitespace-pre-wrap'}>{message.text}</span>
-                  </div>
-                </div>
-              );
-            })}
-            {isWaitingForResponse && (
-              <div className="flex justify-start">
-                <div className="bubble-in bubble-tail-in">
-                  <div className="flex items-center space-x-1">
-                    <div className="flex space-x-1">
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          <ChatMessages
+            messages={messages}
+            isWaitingForResponse={isWaitingForResponse}
+            scrollContainerRef={scrollContainerRef}
+            onScroll={handleScroll}
+          />
 
           <div className="border-t border-gray-200 p-3">
-            {error && (
-              <div className="mb-2 rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700">
-                <div className="flex items-center justify-between">
-                  <span>Something went wrong.</span>
-                  <button className="underline" onClick={clearError}>
-                    Dismiss
-                  </button>
-                </div>
-                <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap text-xs text-red-600">{error}</pre>
-              </div>
-            )}
+            {error && <ErrorBanner message={error} onDismiss={clearError} />}
 
-            <form
-              className="flex items-center gap-2"
-              onSubmit={async (event) => {
-                event.preventDefault();
-                if (!canSubmit) return;
-                const value = input;
-                setInput('');
-                try {
-                  await sendMessage(value);
-                } catch {
-                  setInput(value);
-                }
-              }}
-            >
-              <input
-                className="input"
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                placeholder={settings.apiKey ? 'iMessage…' : 'Add your OpenRouter API key in Settings to start'}
-              />
-              <button type="submit" className="btn" disabled={!canSubmit}>
-                Send
-              </button>
-            </form>
+            <ChatInput
+              value={input}
+              canSubmit={canSubmit}
+              placeholder={inputPlaceholder}
+              onChange={handleInputChange}
+              onSubmit={handleSubmit}
+            />
 
             <div className="mt-2 flex items-center justify-end text-xs text-gray-500">
               <span className="chip">Requests use the server-configured model.</span>
@@ -320,12 +259,7 @@ export default function Page() {
           </div>
         </div>
 
-        <SettingsModal
-          open={open}
-          onClose={() => setOpen(false)}
-          settings={settings}
-          onSave={(next) => setSettings(next)}
-        />
+        <SettingsModal open={open} onClose={closeSettings} settings={settings} onSave={setSettings} />
       </div>
     </main>
   );

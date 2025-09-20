@@ -30,3 +30,11 @@ server/data/
 
 # Python virtual environment
 server/venv/
+
+# Build metadata
+*.tsbuildinfo
+/package-lock.json
+
+# Generated documentation / analysis artifacts
+server/repomix-output.txt
+server/plans/

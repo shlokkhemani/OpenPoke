@@ -5,13 +5,16 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from server.config import get_settings
 from server.logging_config import logger
 from server.openrouter_client import request_chat_completion
 from server.services.execution_log import get_execution_agent_logs
 from server.services.gmail import _load_gmail_user_id, execute_gmail_tool
+from server.services.timezone_store import get_timezone_store
 
+from .email_cleaner import EmailTextCleaner
 from .gmail_internal import GMAIL_FETCH_EMAILS_SCHEMA
 from .schemas import (
     GmailSearchEmail,
@@ -77,18 +80,27 @@ def _get_system_prompt() -> str:
         f"   - For \"today's emails\": `after:{today}`\n"
         f"   - For \"this week's emails\": Use date ranges based on today ({today})\n"
         "\n"
-        "## Your Process:\n"
-        "1. Analyze the user's request to identify key search criteria\n"
-        "2. Generate multiple targeted Gmail search queries using appropriate operators\n"
-        "3. Execute searches in parallel when possible for comprehensive coverage\n"
-        "4. Review results and run additional searches if needed to ensure completeness\n"
-        "5. Call `return_search_results` with the message IDs that best match the user's intent\n"
+        "## Email Content Processing:\n"
+        "- Each email includes `clean_text` - processed, readable content from HTML/plain text\n"
+        "- Clean text has tracking pixels removed, URLs truncated, and formatting optimized\n"
+        "- Attachment information is available: `has_attachments`, `attachment_count`, `attachment_filenames`\n"
+        "- Email timestamps are automatically converted to the user's preferred timezone\n"
+        "- Use clean text content to understand email context and relevance\n"
         "\n"
-        "Be thorough and strategic - use Gmail's search power to find exactly what the user needs!"
+        "## Your Process:\n"
+        "1. **Analyze** the user's request to identify key search criteria\n"
+        "2. **Search strategically** using multiple targeted Gmail queries with appropriate operators\n"
+        "3. **Review content** - examine the `clean_text` field to understand email relevance\n"
+        "4. **Consider attachments** - factor in attachment information when relevant to the query\n"
+        "5. **Refine searches** - run additional queries if needed based on content analysis\n"
+        "6. **Select results** - call `return_search_results` with message IDs that best match intent\n"
+        "\n"
+        "Be thorough and strategic - use Gmail's search power AND content analysis to find exactly what the user needs!"
     )
 
 _COMPLETION_TOOL_SCHEMA = get_completion_schema()
 _LOG_STORE = get_execution_agent_logs()
+_EMAIL_CLEANER = EmailTextCleaner(max_url_length=40)
 
 
 # Helper functions for cleaner error handling
@@ -334,9 +346,11 @@ async def _perform_search(
     composio_arguments = {
         "query": query,
         "max_results": 10,  # Limit results per query for manageable LLM responses
-        "include_payload": arguments.get("include_payload", False),  # Default: False (lighter responses)
-        "verbose": arguments.get("verbose", True),  # Default: True (need parsed content)
+        "include_payload": True,  # REQUIRED: Need full email content for text cleaning
+        "verbose": True,  # REQUIRED: Need parsed content including messageText
         "include_spam_trash": arguments.get("include_spam_trash", False),  # Default: False
+        "format": "full",  # Request full email format
+        "metadata_headers": ["From", "To", "Subject", "Date"],  # Ensure we get key headers
     }
 
     _LOG_STORE.record_action(
@@ -480,37 +494,89 @@ def _parse_composio_messages(
     return emails, next_page_token
 
 
+def _convert_to_user_timezone(dt: datetime) -> datetime:
+    """Convert datetime to user's preferred timezone."""
+    if dt.tzinfo is None:
+        # Assume UTC if no timezone info
+        dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+    
+    # Get user's timezone preference
+    store = get_timezone_store()
+    user_tz_name = store.get_timezone("UTC")
+    
+    try:
+        user_tz = ZoneInfo(user_tz_name)
+        return dt.astimezone(user_tz)
+    except ZoneInfoNotFoundError:
+        logger.warning(f"Invalid user timezone '{user_tz_name}', using UTC")
+        return dt.astimezone(ZoneInfo("UTC"))
+    except Exception as exc:
+        logger.warning(f"Timezone conversion failed: {exc}, using UTC")
+        return dt.astimezone(ZoneInfo("UTC"))
+
+
 def _parse_timestamp(raw: Optional[str]) -> Optional[datetime]:
-    """Parse ISO timestamp string into datetime object."""
+    """Parse ISO timestamp string into datetime object and convert to user timezone."""
     if not raw:
         return None
     try:
         # Handle Z suffix for UTC timezone
         normalized = raw.replace("Z", "+00:00") if raw.endswith("Z") else raw
-        return datetime.fromisoformat(normalized)
+        dt = datetime.fromisoformat(normalized)
+        # Convert to user's timezone
+        return _convert_to_user_timezone(dt)
     except ValueError:
         return None
 
 
 def _email_from_composio(message: Dict[str, Any], query: str) -> Optional[GmailSearchEmail]:
-    """Convert Composio message dict to structured GmailSearchEmail object."""
+    """Convert Composio message dict to clean GmailSearchEmail object with text processing."""
+    # Extract core identifiers
     message_id = (message.get("messageId") or message.get("id") or "").strip()
     if not message_id:
+        logger.warning("Skipping email with missing message ID")
         return None
     
-    preview = message.get("preview") or {}
+    thread_id = message.get("threadId") or message.get("thread_id")
+    
+    # Extract metadata with proper defaults
+    subject = message.get("subject") or "No Subject"
+    sender = message.get("sender") or "Unknown Sender"
+    recipient = message.get("to") or "Unknown Recipient"
+    
+    # Parse timestamp and convert to user timezone
+    timestamp = _parse_timestamp(message.get("messageTimestamp"))
+    if not timestamp:
+        logger.warning(f"Email {message_id} has invalid timestamp, using current time in user timezone")
+        timestamp = _convert_to_user_timezone(datetime.now())
+    
+    # Extract labels
+    label_ids = list(message.get("labelIds") or [])
+    
+    # Process email content with the text cleaner
+    try:
+        clean_text = _EMAIL_CLEANER.clean_email_content(message)
+    except Exception as exc:
+        logger.error(f"Failed to clean email content for {message_id}: {exc}")
+        clean_text = "Error processing email content"
+    
+    # Extract attachment information
+    attachments = message.get("attachmentList", [])
+    has_attachments, attachment_count, attachment_filenames = _EMAIL_CLEANER.extract_attachment_info(attachments)
     
     return GmailSearchEmail(
         id=message_id,
-        thread_id=message.get("threadId") or message.get("thread_id"),
-        subject=message.get("subject") or preview.get("subject"),
-        sender=message.get("sender"),
-        recipient=message.get("to"),
-        timestamp=_parse_timestamp(message.get("messageTimestamp")),
-        label_ids=list(message.get("labelIds") or []),
-        preview_subject=preview.get("subject"),
-        preview_body=preview.get("body") or message.get("messageText"),
+        thread_id=thread_id,
         query=query,
+        subject=subject,
+        sender=sender,
+        recipient=recipient,
+        timestamp=timestamp,
+        label_ids=label_ids,
+        clean_text=clean_text,
+        has_attachments=has_attachments,
+        attachment_count=attachment_count,
+        attachment_filenames=attachment_filenames,
     )
 
 

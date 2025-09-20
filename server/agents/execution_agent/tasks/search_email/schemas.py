@@ -34,20 +34,29 @@ _SCHEMAS: List[Dict[str, Any]] = [
 
 
 class GmailSearchEmail(BaseModel):
-    """Normalized representation of an email returned from Composio."""
+    """Clean email representation with enhanced content processing."""
 
     model_config = ConfigDict(extra="ignore", frozen=True)
 
-    id: str
+    # Core identifiers
+    id: str  # message_id from Gmail API
     thread_id: Optional[str] = None
-    subject: Optional[str] = None
-    sender: Optional[str] = None
-    recipient: Optional[str] = None
-    timestamp: Optional[datetime] = None
+    query: str  # The search query that found this email
+    
+    # Email metadata
+    subject: str
+    sender: str
+    recipient: str  # to field
+    timestamp: datetime
     label_ids: List[str] = Field(default_factory=list)
-    preview_subject: Optional[str] = None
-    preview_body: Optional[str] = None
-    query: str
+    
+    # Clean content (primary field for LLM consumption)
+    clean_text: str  # Processed, readable email content
+    
+    # Attachment information
+    has_attachments: bool = False
+    attachment_count: int = 0
+    attachment_filenames: List[str] = Field(default_factory=list)
 
 
 class EmailSearchToolResult(BaseModel):

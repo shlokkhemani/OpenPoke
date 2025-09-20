@@ -32,12 +32,23 @@ DEFAULT_APP_NAME = "OpenPoke Server"
 DEFAULT_APP_VERSION = "0.3.0"
 
 
+def _env_int(name: str, fallback: int) -> int:
+    try:
+        return int(os.getenv(name, str(fallback)))
+    except (TypeError, ValueError):
+        return fallback
+
+
 class Settings(BaseModel):
     """Application settings with lightweight env fallbacks."""
 
     # App metadata
     app_name: str = Field(default=DEFAULT_APP_NAME)
     app_version: str = Field(default=DEFAULT_APP_VERSION)
+
+    # Server runtime
+    server_host: str = Field(default=os.getenv("OPENPOKE_HOST", "0.0.0.0"))
+    server_port: int = Field(default=_env_int("OPENPOKE_PORT", 8001))
 
     # LLM model selection
     interaction_agent_model: str = Field(default="anthropic/claude-sonnet-4")

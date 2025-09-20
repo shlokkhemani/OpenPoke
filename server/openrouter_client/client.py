@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import Any, Dict, List, Optional
 
 import httpx
+
+from ..config import get_settings
 
 OpenRouterBaseURL = "https://openrouter.ai/api/v1"
 
@@ -14,7 +15,8 @@ class OpenRouterError(RuntimeError):
 
 
 def _headers(*, api_key: Optional[str] = None) -> Dict[str, str]:
-    key = (api_key or os.getenv("OPENROUTER_API_KEY", "")).strip()
+    settings = get_settings()
+    key = (api_key or settings.openrouter_api_key or "").strip()
     if not key:
         raise OpenRouterError("Missing OpenRouter API key")
 
@@ -23,13 +25,6 @@ def _headers(*, api_key: Optional[str] = None) -> Dict[str, str]:
         "Content-Type": "application/json",
         "Accept": "application/json",
     }
-
-    referer = os.getenv("OPENROUTER_HTTP_REFERER")
-    if referer:
-        headers["HTTP-Referer"] = referer
-    title = os.getenv("OPENROUTER_APP_TITLE")
-    if title:
-        headers["X-Title"] = title
 
     return headers
 

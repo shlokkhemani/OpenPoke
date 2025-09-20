@@ -3,19 +3,17 @@
 
 import argparse
 import logging
-import os
 
 import uvicorn
 
 from .app import app
+from .config import get_settings
 
 
 def main() -> None:
-    default_host = os.getenv("OPENPOKE_HOST", "0.0.0.0")
-    try:
-        default_port = int(os.getenv("OPENPOKE_PORT", "8001"))
-    except ValueError:
-        default_port = 8001
+    settings = get_settings()
+    default_host = settings.server_host
+    default_port = settings.server_port
 
     parser = argparse.ArgumentParser(description="OpenPoke FastAPI server")
     parser.add_argument("--host", default=default_host, help=f"Host to bind (default: {default_host})")

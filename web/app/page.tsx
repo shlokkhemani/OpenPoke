@@ -250,10 +250,6 @@ export default function Page() {
               onChange={handleInputChange}
               onSubmit={handleSubmit}
             />
-
-            <div className="mt-2 flex items-center justify-end text-xs text-gray-500">
-              <span className="chip">Requests use the server-configured model.</span>
-            </div>
           </div>
         </div>
 

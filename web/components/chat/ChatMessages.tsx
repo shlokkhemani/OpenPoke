@@ -62,7 +62,7 @@ function EmptyState() {
     <div className="mx-auto my-12 max-w-sm text-center text-gray-500">
       <h2 className="mb-2 text-xl font-semibold text-gray-700">Start a conversation</h2>
       <p className="text-sm">
-        Your messages will appear here. Add your OpenRouter key in Settings to get started.
+        Your messages will appear here. Send something to get started.
       </p>
     </div>
   );

@@ -8,11 +8,11 @@ from . import gmail, triggers
 from ..tasks import get_task_registry, get_task_schemas
 
 
-def get_tool_schemas(agent_name: Optional[str] = None) -> List[Dict[str, Any]]:
+def get_tool_schemas() -> List[Dict[str, Any]]:
     """Return OpenAI/OpenRouter-compatible tool schemas."""
 
     return [
-        *gmail.get_schemas(agent_name),
+        *gmail.get_schemas(),
         *get_task_schemas(),
         *triggers.get_schemas(),
     ]

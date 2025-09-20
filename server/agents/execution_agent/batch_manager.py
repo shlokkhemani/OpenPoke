@@ -36,7 +36,7 @@ class _BatchState:
 class ExecutionBatchManager:
     """Run execution agents and deliver their combined outcome."""
 
-    def __init__(self, timeout_seconds: int = 60) -> None:
+    def __init__(self, timeout_seconds: int = 90) -> None:
         self.timeout_seconds = timeout_seconds
         self._pending: Dict[str, PendingExecution] = {}
         self._batch_lock = asyncio.Lock()

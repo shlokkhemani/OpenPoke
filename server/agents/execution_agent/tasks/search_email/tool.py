@@ -12,7 +12,7 @@ from server.openrouter_client import request_chat_completion
 from server.services.execution_log import get_execution_agent_logs
 from server.services.gmail import _load_gmail_user_id, execute_gmail_tool
 
-from ...tools import gmail
+from .gmail_internal import GMAIL_FETCH_EMAILS_SCHEMA
 from .schemas import (
     GmailSearchEmail,
     EmailSearchToolResult,
@@ -21,12 +21,10 @@ from .schemas import (
     SEARCH_TOOL_NAME,
     TASK_TOOL_NAME,
     get_completion_schema,
-    get_gmail_fetch_schema,
 )
 
 # Constants
 MAX_LLM_ITERATIONS = 8
-MAX_RESULTS_PER_QUERY = 10
 ERROR_GMAIL_NOT_CONNECTED = "Gmail not connected. Please connect Gmail in settings first."
 ERROR_OPENROUTER_NOT_CONFIGURED = "OpenRouter API key not configured. Set OPENROUTER_API_KEY."
 ERROR_EMPTY_QUERY = "search_query must not be empty"
@@ -37,16 +35,57 @@ ERROR_TOOL_ARGUMENTS_INVALID = "Tool arguments must be an object"
 ERROR_ITERATION_LIMIT = "Email search orchestrator exceeded iteration limit"
 
 
-_SYSTEM_PROMPT = (
-    "You are an email research analyst helping expand fuzzy Gmail requests into concrete Gmail search queries.\n"
-    "You have two tools available: `gmail_fetch_emails` for gathering data and `return_search_results` for returning"
-    " your final findings.\n"
-    "Plan several specific Gmail queries that could surface the user's target emails. Issue multiple tool calls in"
-    " the same turn whenever that helps explore variants in parallel, then review the results and decide whether"
-    " more searches are needed. Stop when you have gathered enough evidence.\n"
-    "When you are ready to finish, call `return_search_results` with the list of relevant Gmail message ids you"
-    " discovered. Never include message bodies or other text in the final tool call."
-)
+def _get_system_prompt() -> str:
+    """Generate system prompt with today's date for Gmail search assistant."""
+    today = datetime.now().strftime("%Y/%m/%d")
+    
+    return (
+        "You are an expert Gmail search assistant helping users find emails efficiently.\n"
+        f"\n"
+        f"## Current Context:\n"
+        f"- Today's date: {today}\n"
+        f"- Use this date as reference for relative time queries (e.g., 'recent', 'today', 'this week')\n"
+        "\n"
+        "## Available Tools:\n"
+        "- `gmail_fetch_emails`: Search Gmail using advanced search parameters\n"
+        "- `return_search_results`: Return the final list of relevant message IDs\n"
+        "\n"
+        "## Gmail Search Strategy:\n"
+        "1. **Use Gmail's powerful search operators** to create precise queries:\n"
+        "   - `from:email@domain.com` - emails from specific sender\n"
+        "   - `to:email@domain.com` - emails to specific recipient\n"
+        "   - `subject:keyword` - emails with specific subject content\n"
+        "   - `has:attachment` - emails with attachments\n"
+        "   - `after:YYYY/MM/DD` and `before:YYYY/MM/DD` - date ranges\n"
+        "   - `is:unread`, `is:read`, `is:important` - status filters\n"
+        "   - `in:inbox`, `in:sent`, `in:trash` - location filters\n"
+        "   - `larger:10M`, `smaller:1M` - size filters\n"
+        "   - `\"exact phrase\"` - exact phrase matching\n"
+        "   - `OR`, `-` (NOT), `()` for complex boolean logic\n"
+        "\n"
+        "2. **Run multiple searches in parallel** when the user's request suggests different approaches:\n"
+        "   - Search by sender AND by keywords simultaneously\n"
+        "   - Try relevant date ranges in parallel\n"
+        "   - Search multiple related terms or variations\n"
+        "   - Combine broad and specific queries\n"
+        "\n"
+        "3. **Think strategically** about what search parameters would be most relevant:\n"
+        f"   - For \"recent emails from John\": `from:john after:{today}`\n"
+        "   - For \"meeting invites\": `subject:meeting OR subject:invite has:attachment`\n"
+        "   - For \"large files\": `has:attachment larger:5M`\n"
+        "   - For \"unread important emails\": `is:unread is:important`\n"
+        f"   - For \"today's emails\": `after:{today}`\n"
+        f"   - For \"this week's emails\": Use date ranges based on today ({today})\n"
+        "\n"
+        "## Your Process:\n"
+        "1. Analyze the user's request to identify key search criteria\n"
+        "2. Generate multiple targeted Gmail search queries using appropriate operators\n"
+        "3. Execute searches in parallel when possible for comprehensive coverage\n"
+        "4. Review results and run additional searches if needed to ensure completeness\n"
+        "5. Call `return_search_results` with the message IDs that best match the user's intent\n"
+        "\n"
+        "Be thorough and strategic - use Gmail's search power to find exactly what the user needs!"
+    )
 
 _COMPLETION_TOOL_SCHEMA = get_completion_schema()
 _LOG_STORE = get_execution_agent_logs()
@@ -152,9 +191,9 @@ async def _run_email_search(
         response = await request_chat_completion(
             model=model,
             messages=messages,
-            system=_SYSTEM_PROMPT,
+            system=_get_system_prompt(),
             api_key=api_key,
-            tools=[get_gmail_fetch_schema(), _COMPLETION_TOOL_SCHEMA],
+            tools=[GMAIL_FETCH_EMAILS_SCHEMA, _COMPLETION_TOOL_SCHEMA],
         )
         
         # Process assistant response
@@ -211,11 +250,7 @@ async def _run_email_search(
 
 def _render_user_message(search_query: str) -> str:
     """Create user message for the LLM with search context."""
-    return (
-        "The user wants help locating Gmail messages.\n"
-        f"Raw request: {search_query}\n"
-        "Generate targeted Gmail search queries and use the available tool to inspect results."
-    )
+    return f"Please help me find emails: {search_query}"
 
 
 async def _execute_tool_calls(
@@ -296,13 +331,12 @@ async def _perform_search(
             error=ERROR_QUERY_REQUIRED,
         )
 
-    include_spam_trash = bool(arguments.get("include_spam_trash", False))
     composio_arguments = {
         "query": query,
-        "max_results": MAX_RESULTS_PER_QUERY,
-        "include_payload": True,
-        "verbose": True,
-        "include_spam_trash": include_spam_trash,
+        "max_results": 10,  # Limit results per query for manageable LLM responses
+        "include_payload": arguments.get("include_payload", False),  # Default: False (lighter responses)
+        "verbose": arguments.get("verbose", True),  # Default: True (need parsed content)
+        "include_spam_trash": arguments.get("include_spam_trash", False),  # Default: False
     }
 
     _LOG_STORE.record_action(

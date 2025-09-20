@@ -187,48 +187,6 @@ _SCHEMAS: List[Dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "gmail_fetch_emails",
-            "description": "Fetch Gmail messages with optional filters and verbosity controls",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Optional Gmail search query string (same syntax as Gmail UI).",
-                    },
-                    "label_ids": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Filter results to specific Gmail label ids.",
-                    },
-                    "page_token": {
-                        "type": "string",
-                        "description": "Pagination token returned from a previous fetch.",
-                    },
-                    "ids_only": {
-                        "type": "boolean",
-                        "description": "Return only message ids instead of full payloads when true.",
-                    },
-                    "include_payload": {
-                        "type": "boolean",
-                        "description": "Include full message payload data when true.",
-                    },
-                    "include_spam_trash": {
-                        "type": "boolean",
-                        "description": "Include spam and trash messages when true.",
-                    },
-                    "verbose": {
-                        "type": "boolean",
-                        "description": "Request verbose output with parsed headers and bodies when true.",
-                    },
-                },
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "gmail_get_contacts",
             "description": "Retrieve Google contacts (connections) available to the authenticated Gmail account.",
             "parameters": {
@@ -358,7 +316,7 @@ _LOG_STORE = get_execution_agent_logs()
 
 def get_schemas() -> List[Dict[str, Any]]:
     """Return Gmail tool schemas."""
-
+    
     return _SCHEMAS
 
 
@@ -473,32 +431,6 @@ def gmail_delete_draft(
     return _execute("GMAIL_DELETE_DRAFT", composio_user_id, arguments)
 
 
-def gmail_fetch_emails(
-    query: Optional[str] = None,
-    label_ids: Optional[List[str]] = None,
-    max_results: Optional[int] = None,
-    page_token: Optional[str] = None,
-    ids_only: Optional[bool] = None,
-    include_payload: Optional[bool] = None,
-    include_spam_trash: Optional[bool] = None,
-    verbose: Optional[bool] = None,
-) -> Dict[str, Any]:
-    arguments: Dict[str, Any] = {
-        "query": query,
-        "label_ids": label_ids,
-        "max_results": max_results,
-        "page_token": page_token,
-        "ids_only": ids_only,
-        "include_payload": include_payload,
-        "include_spam_trash": include_spam_trash,
-        "verbose": verbose,
-    }
-    composio_user_id = _load_gmail_user_id()
-    if not composio_user_id:
-        return {"error": "Gmail not connected. Please connect Gmail in settings first."}
-    return _execute("GMAIL_FETCH_EMAILS", composio_user_id, arguments)
-
-
 def gmail_get_contacts(
     resource_name: Optional[str] = None,
     person_fields: Optional[str] = None,
@@ -577,14 +509,13 @@ def gmail_search_people(
     return _execute("GMAIL_SEARCH_PEOPLE", composio_user_id, arguments)
 
 
-def build_registry(agent_name: str) -> Dict[str, Callable[..., Any]]:
-    """Return Gmail tool callables. Execution agent gets filtered tools."""
+def build_registry(agent_name: str) -> Dict[str, Callable[..., Any]]:  # noqa: ARG001
+    """Return Gmail tool callables."""
     
-    registry = {
+    return {
         "gmail_create_draft": gmail_create_draft,
         "gmail_execute_draft": gmail_execute_draft,
         "gmail_delete_draft": gmail_delete_draft,
-        "gmail_fetch_emails": gmail_fetch_emails,
         "gmail_forward_email": gmail_forward_email,
         "gmail_reply_to_thread": gmail_reply_to_thread,
         "gmail_get_contacts": gmail_get_contacts,
@@ -592,12 +523,6 @@ def build_registry(agent_name: str) -> Dict[str, Callable[..., Any]]:
         "gmail_list_drafts": gmail_list_drafts,
         "gmail_search_people": gmail_search_people,
     }
-    
-    # Execution agent should use task_email_search instead of direct gmail_fetch_emails
-    if agent_name == "execution_agent":
-        registry.pop("gmail_fetch_emails", None)
-    
-    return registry
 
 
 __all__ = [

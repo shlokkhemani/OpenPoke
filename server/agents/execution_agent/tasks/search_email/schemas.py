@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
@@ -92,10 +91,6 @@ _COMPLETION_SCHEMAS: List[Dict[str, Any]] = [
     }
 ]
 
-# Global cache for the modified Gmail fetch schema
-_GMAIL_FETCH_SCHEMA: Optional[Dict[str, Any]] = None
-
-
 def get_completion_schema() -> Dict[str, Any]:
     return _COMPLETION_SCHEMAS[0]
 
@@ -104,32 +99,6 @@ def get_schemas() -> List[Dict[str, Any]]:
     """Return the JSON schema for the email search task."""
 
     return _SCHEMAS
-
-
-def get_gmail_fetch_schema() -> Dict[str, Any]:
-    """Get Gmail fetch schema with max_results parameter removed for LLM use."""
-    global _GMAIL_FETCH_SCHEMA
-    if _GMAIL_FETCH_SCHEMA is None:
-        from ...tools import gmail
-        original = _resolve_gmail_fetch_schema(gmail.get_schemas())
-        sanitized = deepcopy(original)
-        try:
-            properties = sanitized["function"]["parameters"]["properties"]
-        except KeyError:
-            properties = None
-        if isinstance(properties, dict):
-            properties.pop("max_results", None)
-        _GMAIL_FETCH_SCHEMA = sanitized
-    return _GMAIL_FETCH_SCHEMA
-
-
-def _resolve_gmail_fetch_schema(schemas: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Find the gmail_fetch_emails schema from the provided schemas."""
-    for schema in schemas:
-        function = schema.get("function", {})
-        if function.get("name") == SEARCH_TOOL_NAME:
-            return schema
-    raise RuntimeError("gmail_fetch_emails schema unavailable for task_email_search")
 
 
 __all__ = [
@@ -141,5 +110,4 @@ __all__ = [
     "TASK_TOOL_NAME",
     "get_completion_schema",
     "get_schemas",
-    "get_gmail_fetch_schema",
 ]

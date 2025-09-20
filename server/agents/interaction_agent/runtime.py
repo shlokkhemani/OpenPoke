@@ -8,6 +8,7 @@ from .agent import build_system_prompt, prepare_message_with_history
 from .tools import ToolResult, get_tool_schemas, handle_tool_call
 from ...config import get_settings
 from ...services.conversation_log import get_conversation_log
+from ...services.summarization import get_working_memory_log
 from ...openrouter_client import request_chat_completion
 from ...logging_config import logger
 
@@ -50,7 +51,9 @@ class InteractionAgentRuntime:
         settings = get_settings()
         self.api_key = settings.openrouter_api_key
         self.model = settings.default_model or "openrouter/auto"
+        self.settings = settings
         self.conversation_log = get_conversation_log()
+        self.working_memory_log = get_working_memory_log()
         self.tool_schemas = get_tool_schemas()
 
         if not self.api_key:
@@ -62,7 +65,7 @@ class InteractionAgentRuntime:
         """Handle a user-authored message."""
 
         try:
-            transcript_before = self.conversation_log.load_transcript()
+            transcript_before = self._load_conversation_transcript()
             self.conversation_log.record_user_message(user_message)
 
             system_prompt = build_system_prompt()
@@ -96,7 +99,7 @@ class InteractionAgentRuntime:
         """Process a status update emitted by an execution agent."""
 
         try:
-            transcript_before = self.conversation_log.load_transcript()
+            transcript_before = self._load_conversation_transcript()
             self.conversation_log.record_agent_message(agent_message)
 
             system_prompt = build_system_prompt()
@@ -183,6 +186,13 @@ class InteractionAgentRuntime:
             logger.warning("Interaction loop exited without assistant content")
 
         return summary
+
+    def _load_conversation_transcript(self) -> str:
+        if self.settings.summarization_enabled:
+            rendered = self.working_memory_log.render_transcript()
+            if rendered.strip():
+                return rendered
+        return self.conversation_log.load_transcript()
 
     async def _make_llm_call(
         self,

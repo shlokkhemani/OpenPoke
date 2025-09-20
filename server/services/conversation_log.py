@@ -12,6 +12,7 @@ from ..config import get_settings
 from ..logging_config import logger
 from ..models import ChatMessage
 from .timezone_store import get_timezone_store
+from .summarization import get_working_memory_log
 
 
 class TranscriptFormatter(Protocol):
@@ -61,6 +62,7 @@ class ConversationLog:
         self._formatter = formatter
         self._lock = threading.Lock()
         self._ensure_directory()
+        self._working_memory_log = get_working_memory_log()
 
     def _ensure_directory(self) -> None:
         try:
@@ -68,7 +70,7 @@ class ConversationLog:
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("conversation log directory creation failed", extra={"error": str(exc)})
 
-    def _append(self, tag: str, payload: str) -> None:
+    def _append(self, tag: str, payload: str) -> str:
         timestamp = _current_timestamp()
         entry = self._formatter(tag, timestamp, str(payload))
         with self._lock:
@@ -81,6 +83,8 @@ class ConversationLog:
                     extra={"error": str(exc), "tag": tag, "path": str(self._path)},
                 )
                 raise
+        self._notify_summarization()
+        return timestamp
 
     def _parse_line(self, line: str) -> Optional[Tuple[str, str, str]]:
         stripped = line.strip()
@@ -135,17 +139,43 @@ class ConversationLog:
         return "\n".join(parts)
 
     def record_user_message(self, content: str) -> None:
-        self._append("user_message", content)
+        timestamp = self._append("user_message", content)
+        self._working_memory_log.append_entry("user_message", content, timestamp)
 
     def record_agent_message(self, content: str) -> None:
-        self._append("agent_message", content)
+        timestamp = self._append("agent_message", content)
+        self._working_memory_log.append_entry("agent_message", content, timestamp)
 
     def record_reply(self, content: str) -> None:
-        self._append("poke_reply", content)
+        timestamp = self._append("poke_reply", content)
+        self._working_memory_log.append_entry("poke_reply", content, timestamp)
 
     def record_wait(self, reason: str) -> None:
         """Record a wait marker that should not reach the user-facing chat history."""
-        self._append("wait", reason)
+        timestamp = self._append("wait", reason)
+        self._working_memory_log.append_entry("wait", reason, timestamp)
+
+    def _notify_summarization(self) -> None:
+        settings = get_settings()
+        if not settings.summarization_enabled:
+            return
+
+        try:
+            from .summarization import schedule_summarization  # type: ignore import-not-found
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug(
+                "summarization scheduler unavailable",
+                extra={"error": str(exc)},
+            )
+            return
+
+        try:
+            schedule_summarization()
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "failed to schedule summarization",
+                extra={"error": str(exc)},
+            )
 
     def to_chat_messages(self) -> List[ChatMessage]:
         messages: List[ChatMessage] = []
@@ -177,6 +207,13 @@ class ConversationLog:
                 )
             finally:
                 self._ensure_directory()
+        try:
+            self._working_memory_log.clear()
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug(
+                "working memory clear skipped",
+                extra={"error": str(exc)},
+            )
 
 
 _conversation_log = ConversationLog(get_settings().resolved_conversation_log_path)

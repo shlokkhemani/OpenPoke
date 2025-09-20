@@ -44,6 +44,9 @@ class Settings(BaseModel):
     chat_history_path: Optional[str] = Field(default=os.getenv("OPENPOKE_CHAT_HISTORY_PATH"))
     conversation_log_path: Optional[str] = Field(default=os.getenv("OPENPOKE_CONVERSATION_LOG_PATH"))
     execution_agents_dir: Optional[str] = Field(default=os.getenv("OPENPOKE_EXECUTION_AGENTS_DIR"))
+    working_memory_log_path: Optional[str] = Field(default=os.getenv("OPENPOKE_WORKING_MEMORY_LOG_PATH"))
+    conversation_summary_threshold: int = Field(default=100)
+    conversation_summary_tail_size: int = Field(default=10)
 
     @property
     def cors_allow_origins(self) -> List[str]:
@@ -76,6 +79,17 @@ class Settings(BaseModel):
     def resolved_chat_history_path(self) -> Path:
         """Alias for conversation log path."""
         return self.resolved_conversation_log_path
+
+    @property
+    def resolved_working_memory_log_path(self) -> Path:
+        """Location for the working-memory conversation summary file."""
+        default = Path(__file__).parent / "data" / "conversation" / "poke_working_memory.log"
+        return self.resolve_path(self.working_memory_log_path, default)
+
+    @property
+    def summarization_enabled(self) -> bool:
+        """Whether conversation summarization is active."""
+        return self.conversation_summary_threshold > 0
 
     @property
     def resolved_execution_agents_dir(self) -> Path:

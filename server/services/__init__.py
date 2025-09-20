@@ -9,6 +9,7 @@ from .important_email_watcher import get_important_email_watcher
 from .trigger_scheduler import get_trigger_scheduler
 from .triggers import get_trigger_service
 from .timezone_store import get_timezone_store
+from .summarization import get_working_memory_log, schedule_summarization
 
 
 __all__ = [
@@ -24,4 +25,6 @@ __all__ = [
     "get_trigger_scheduler",
     "get_trigger_service",
     "get_timezone_store",
+    "get_working_memory_log",
+    "schedule_summarization",
 ]

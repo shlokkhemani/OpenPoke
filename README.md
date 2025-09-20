@@ -1,6 +1,11 @@
 # OpenPoke
 
-Lightweight agent orchestration stack with a FastAPI backend and a Next.js web UI. The backend talks to OpenRouter for LLM calls and can optionally use Composio for Gmail automation.
+OpenPoke is a simplified, open-source take on [Interaction Company’s](https://interaction.co/about) [Poke](https://poke.com/) assistant—built to show how a multi-agent orchestration stack can feel genuinely useful. It keeps the handful of things Poke is great at (email triage, reminders, and persistent agents) while staying easy to spin up locally.
+
+- Multi-agent FastAPI backend that mirrors Poke’s interaction/execution split, powered by OpenRouter LLMs.
+- Gmail tooling, optional via Composio, for drafting/replying/forwarding without leaving chat.
+- Trigger scheduler and background watchers for reminders and “important email” alerts.
+- Next.js web UI that proxies everything through the shared `.env`, so plugging in API keys is the only setup.
 
 ## Requirements
 - Python 3.10+

@@ -38,6 +38,7 @@ class ExecutionAgentRuntime:
         if not self.api_key:
             raise ValueError("OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.")
 
+    # Execute a specialized task agent with the given instructions
     async def execute(self, instructions: str) -> ExecutionResult:
         """Execute the agent with given instructions."""
         try:

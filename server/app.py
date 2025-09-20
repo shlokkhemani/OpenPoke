@@ -1,20 +1,19 @@
 from __future__ import annotations
 
 import json
-from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .config import Settings, get_settings
+from .config import get_settings
 from .logging_config import configure_logging, logger
-from .models import RootResponse
 from .routes import api_router
 from .services import get_important_email_watcher, get_trigger_scheduler
 
 
+# Register global exception handlers for consistent error responses across the API
 def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def _validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -30,7 +29,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             "http error",
             extra={"detail": exc.detail, "status": exc.status_code, "path": str(request.url)},
         )
-        detail: Any = exc.detail
+        detail = exc.detail
         if not isinstance(detail, str):
             detail = json.dumps(detail)
         return JSONResponse({"ok": False, "error": detail}, status_code=exc.status_code)
@@ -66,27 +65,8 @@ register_exception_handlers(app)
 app.include_router(api_router)
 
 
-def _public_endpoints(request: Request) -> list[str]:
-    return sorted(
-        {
-            route.path
-            for route in request.app.routes
-            if getattr(route, "include_in_schema", False) and route.path.startswith("/api/")
-        }
-    )
-
-
-@app.get("/")
-def root(request: Request, settings: Settings = Depends(get_settings)) -> RootResponse:
-    return RootResponse(
-        status="ok",
-        service="openpoke",
-        version=settings.app_version,
-        endpoints=_public_endpoints(request),
-    )
-
-
 @app.on_event("startup")
+# Initialize background services (trigger scheduler and email watcher) when the app starts
 async def _start_trigger_scheduler() -> None:
     scheduler = get_trigger_scheduler()
     await scheduler.start()
@@ -95,6 +75,7 @@ async def _start_trigger_scheduler() -> None:
 
 
 @app.on_event("shutdown")
+# Gracefully shutdown background services when the app stops
 async def _stop_trigger_scheduler() -> None:
     scheduler = get_trigger_scheduler()
     await scheduler.stop()

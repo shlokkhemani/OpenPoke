@@ -48,6 +48,7 @@ class EmailTextCleaner:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+    # Extract and clean email content from Gmail API message payload
     def clean_email_content(self, message: Dict[str, Any]) -> str:
         """Return cleaned plain-text representation of a Gmail message."""
 
@@ -60,6 +61,7 @@ class EmailTextCleaner:
             return self.post_process_text(text_content)
         return ""
 
+    # Clean HTML email content by removing unwanted elements and extracting text
     def clean_html_email(self, html_content: str) -> str:
         try:
             soup = BeautifulSoup(html_content, "html.parser")
@@ -255,6 +257,7 @@ class ProcessedEmail:
 # Helpers shared across modules
 # ----------------------------------------------------------------------
 
+# Parse Gmail timestamp string into timezone-aware datetime object
 def parse_gmail_timestamp(raw: Optional[str]) -> Optional[datetime]:
     if not raw:
         return None
@@ -267,6 +270,7 @@ def parse_gmail_timestamp(raw: Optional[str]) -> Optional[datetime]:
         return None
 
 
+# Convert raw Gmail API message into a clean ProcessedEmail object
 def build_processed_email(
     message: Dict[str, Any],
     *,
@@ -319,6 +323,7 @@ def build_processed_email(
     )
 
 
+# Convert multiple raw Gmail messages into ProcessedEmail objects
 def build_processed_emails(
     messages: Sequence[Dict[str, Any]],
     *,
@@ -335,6 +340,7 @@ def build_processed_emails(
     return processed
 
 
+# Parse Composio Gmail API response and extract clean email data with pagination
 def parse_gmail_fetch_response(
     raw_result: Any,
     *,

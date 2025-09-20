@@ -42,6 +42,7 @@ class ExecutionBatchManager:
         self._batch_lock = asyncio.Lock()
         self._batch_state: Optional[_BatchState] = None
 
+    # Execute an agent asynchronously and coordinate results across multiple agents
     async def execute_agent(
         self,
         agent_name: str,
@@ -86,6 +87,7 @@ class ExecutionBatchManager:
         await self._complete_execution(batch_id, result, agent_name)
         return result
 
+    # Register a new execution with the batch manager for coordinated processing
     async def _register_pending_execution(
         self,
         agent_name: str,

@@ -44,6 +44,7 @@ class ImportantEmailWatcher:
         self._cleaner = EmailTextCleaner(max_url_length=60)
         self._warmed_up = self._seen_store.has_entries()
 
+    # Start the background email polling task
     async def start(self) -> None:
         async with self._lock:
             if self._task and not self._task.done():
@@ -56,6 +57,7 @@ class ImportantEmailWatcher:
                 extra={"interval_seconds": self._poll_interval, "lookback_minutes": self._lookback_minutes},
             )
 
+    # Stop the background email polling task gracefully
     async def stop(self) -> None:
         async with self._lock:
             self._running = False
@@ -80,6 +82,7 @@ class ImportantEmailWatcher:
         except asyncio.CancelledError:
             raise
 
+    # Poll Gmail once for new messages and classify them for importance
     async def _poll_once(self) -> None:
         composio_user_id = _load_gmail_user_id()
         if not composio_user_id:

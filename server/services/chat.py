@@ -10,6 +10,7 @@ from ..models import ChatMessage, ChatRequest
 from ..utils import error_response
 
 
+# Extract the most recent user message from the chat request payload
 def _extract_latest_user_message(payload: ChatRequest) -> Optional[ChatMessage]:
     for message in reversed(payload.messages):
         if message.role.lower().strip() == "user" and message.content.strip():
@@ -17,6 +18,7 @@ def _extract_latest_user_message(payload: ChatRequest) -> Optional[ChatMessage]:
     return None
 
 
+# Process incoming chat requests by routing them to the interaction agent runtime
 async def handle_chat_request(payload: ChatRequest) -> Union[PlainTextResponse, JSONResponse]:
     """Handle a chat request using the InteractionAgentRuntime."""
 

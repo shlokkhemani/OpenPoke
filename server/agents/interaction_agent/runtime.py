@@ -61,6 +61,7 @@ class InteractionAgentRuntime:
                 "OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable."
             )
 
+    # Process user messages through the interaction agent's LLM loop
     async def execute(self, user_message: str) -> InteractionResult:
         """Handle a user-authored message."""
 
@@ -95,6 +96,7 @@ class InteractionAgentRuntime:
                 error=str(exc),
             )
 
+    # Process status updates from execution agents and respond to the user
     async def handle_agent_message(self, agent_message: str) -> InteractionResult:
         """Process a status update emitted by an execution agent."""
 
@@ -129,6 +131,7 @@ class InteractionAgentRuntime:
                 error=str(exc),
             )
 
+    # Run iterative LLM calls with tool execution until completion
     async def _run_interaction_loop(
         self,
         system_prompt: str,

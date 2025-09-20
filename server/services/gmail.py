@@ -15,6 +15,7 @@ from ..models import GmailConnectPayload, GmailStatusPayload
 from ..utils import error_response
 
 
+# Persist Gmail user ID to disk for session continuity across restarts
 def _save_gmail_user_id(user_id: str) -> None:
     """Save the Gmail user_id to a file for future use."""
     try:
@@ -27,6 +28,7 @@ def _save_gmail_user_id(user_id: str) -> None:
         logger.error(f"Failed to save Gmail user_id: {e}")
 
 
+# Retrieve persisted Gmail user ID from disk storage
 def _load_gmail_user_id() -> Optional[str]:
     """Load the saved Gmail user_id."""
     try:
@@ -51,6 +53,7 @@ def _gmail_import_client():
         raise RuntimeError("Composio SDK not installed on server. pip install composio") from exc
 
 
+# Get or create a singleton Composio client instance with thread-safe initialization
 def _get_composio_client(settings: Optional[Settings] = None):
     global _CLIENT
     if _CLIENT is not None:
@@ -106,6 +109,7 @@ def _extract_email(obj: Any) -> Optional[str]:
             if isinstance(current, str) and "@" in current:
                 return current
     return None
+# Start Gmail OAuth connection process and return redirect URL
 def initiate_connect(payload: GmailConnectPayload, settings: Settings) -> JSONResponse:
     auth_config_id = payload.auth_config_id or settings.composio_gmail_auth_config_id or ""
     if not auth_config_id:
@@ -134,6 +138,7 @@ def initiate_connect(payload: GmailConnectPayload, settings: Settings) -> JSONRe
         )
 
 
+# Check Gmail connection status and retrieve user account information
 def fetch_status(payload: GmailStatusPayload) -> JSONResponse:
     if not payload.connection_request_id and not payload.user_id:
         return error_response(
@@ -226,6 +231,7 @@ def _normalize_tool_response(result: Any) -> Dict[str, Any]:
     return payload_dict
 
 
+# Execute Gmail operations through Composio SDK with error handling
 def execute_gmail_tool(
     tool_name: str,
     composio_user_id: str,

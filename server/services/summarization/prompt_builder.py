@@ -15,11 +15,45 @@ class SummaryPrompt:
 
 _SYSTEM_PROMPT = dedent(
     """
-    You are a meticulous chief-of-staff-style memory curator for an intelligent assistant.
-    Merge the existing memory with the new conversation logs so the assistant retains the
-    user's goals, commitments, preferences, decisions, and other actionable facts. Remove
-    small talk or redundant chatter. Capture timelines, deadlines, follow-ups, and tool
-    outcomes that matter for future assistance. Respond with polished paragraphs only.
+    You are the assistant's chief-of-staff memory curator. Produce a complete working-memory briefing
+    that the assistant reads before every response. Follow these directives without exception:
+
+    FORMAT — Always output using this exact structure (replace angle brackets with content):
+
+    Summary generated: <latest relevant timestamp from the logs in YYYY-MM-DD HH:MM> (user timezone)
+
+    Timeline & Commitments:
+    - <YYYY-MM-DD HH:MM> — <event / meeting / travel>. Include participants, location, objective,
+      required deliverables, and current status (confirmed / pending / awaiting response) in chronological order.
+
+    Pending & Follow-ups:
+    - <Due YYYY-MM-DD HH:MM or window> — <open task>. Specify owner, status, next step, blockers,
+      and any tracking IDs, links, budgets, or artefacts mentioned.
+
+    Routines & Recurring:
+    - <Cadence (e.g., Mon/Wed/Fri 07:00)> — <habit, reminder, or standing order>. Note fulfilment channel,
+      lead times, budgets, or escalation rules if provided.
+
+    Preferences & Profile:
+    - <Stable preference, constraint, or personal detail>. Capture formats, brands, dietary needs,
+      communication styles, scheduling windows, or other personalization cues.
+
+    Context & Notes:
+    - <Strategic insight, dependency, risk, metric, or configuration> that informs future decisions and
+      does not belong in earlier sections.
+
+    If a section has no content, output a single bullet "- No items."
+
+    RULES — Obey all of these simultaneously:
+    1. Rebuild the entire briefing from scratch on every run; never append or partially edit prior text.
+    2. Merge new actionable information while retaining still-relevant facts from the previous summary.
+    3. Remove items that are complete or obsolete unless the logs explicitly keep them active.
+    4. Convert every relative time phrase (today, tomorrow, next week, tonight, etc.) into explicit
+       YYYY-MM-DD (and HH:MM when known) timestamps in the user's timezone.
+    5. Include all salient details for people, locations, deliverables, tools, identifiers, budgets, and links
+       whenever they appear in the logs.
+    6. Order bullets earliest-first within each section and keep language concise yet information-dense.
+    7. Do not invent facts; only use information present in the existing summary or new logs.
     """
 ).strip()
 
@@ -50,10 +84,6 @@ def build_summarization_prompt(previous_summary: str, entries: List[LogEntry]) -
 
         New conversation logs to merge:
         {_format_log_entries(entries)}
-
-        Produce an updated memory summary that incorporates all new information. Preserve
-        actionable commitments, reminders, and user instructions. If nothing new is
-        relevant, return the existing summary unchanged.
         """
     ).strip()
 

@@ -1,5 +1,5 @@
 import asyncio
-from typing import Optional
+from typing import Optional, Union
 
 from fastapi import status
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -17,7 +17,7 @@ def _extract_latest_user_message(payload: ChatRequest) -> Optional[ChatMessage]:
     return None
 
 
-async def handle_chat_request(payload: ChatRequest) -> PlainTextResponse | JSONResponse:
+async def handle_chat_request(payload: ChatRequest) -> Union[PlainTextResponse, JSONResponse]:
     """Handle a chat request using the InteractionAgentRuntime."""
 
     # Extract user message

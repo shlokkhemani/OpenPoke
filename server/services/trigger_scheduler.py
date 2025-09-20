@@ -6,7 +6,8 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Optional, Set
 
-from ..agents.execution_agent.runtime import ExecutionAgentRuntime, ExecutionResult
+from ..agents.execution_agent.batch_manager import ExecutionBatchManager
+from ..agents.execution_agent.runtime import ExecutionResult
 from ..logging_config import logger
 from .triggers import TriggerRecord, get_trigger_service
 
@@ -88,9 +89,11 @@ class TriggerScheduler:
                     "scheduled_for": trigger.next_trigger,
                 },
             )
-            runtime = ExecutionAgentRuntime(agent_name=trigger.agent_name)
-            loop = asyncio.get_running_loop()
-            result: ExecutionResult = await loop.run_in_executor(None, runtime.execute, instructions)
+            execution_manager = ExecutionBatchManager()
+            result = await execution_manager.execute_agent(
+                trigger.agent_name,
+                instructions,
+            )
             if result.success:
                 self._handle_success(trigger, fired_at)
             else:

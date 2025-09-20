@@ -1,5 +1,6 @@
 """Simplified Execution Agent Runtime."""
 
+import inspect
 import json
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
@@ -94,7 +95,7 @@ class ExecutionAgentRuntime:
                     tools_executed.append(tool_name)
                     logger.info(f"[{self.agent.name}] Executing tool: {tool_name}")
 
-                    success, result = self._execute_tool(tool_name, tool_args)
+                    success, result = await self._execute_tool(tool_name, tool_args)
 
                     if success:
                         logger.info(f"[{self.agent.name}] Tool {tool_name} completed successfully")
@@ -213,7 +214,7 @@ class ExecutionAgentRuntime:
             }
         return self._safe_json_dump(payload)
 
-    def _execute_tool(self, tool_name: str, arguments: Dict) -> Tuple[bool, Any]:
+    async def _execute_tool(self, tool_name: str, arguments: Dict) -> Tuple[bool, Any]:
         """Execute a tool. Returns (success, result)."""
         tool_func = self.tool_registry.get(tool_name)
         if not tool_func:
@@ -221,6 +222,8 @@ class ExecutionAgentRuntime:
 
         try:
             result = tool_func(**arguments)
+            if inspect.isawaitable(result):
+                result = await result
             return True, result
         except Exception as e:
             return False, {"error": str(e)}

@@ -188,7 +188,7 @@ _SCHEMAS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "gmail_fetch_emails",
-            "description": "Fetch Gmail messages with optional filters and verbosity controls via Composio.",
+            "description": "Fetch Gmail messages with optional filters and verbosity controls",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -200,10 +200,6 @@ _SCHEMAS: List[Dict[str, Any]] = [
                         "type": "array",
                         "items": {"type": "string"},
                         "description": "Filter results to specific Gmail label ids.",
-                    },
-                    "max_results": {
-                        "type": "integer",
-                        "description": "Maximum number of messages to return.",
                     },
                     "page_token": {
                         "type": "string",
@@ -581,10 +577,10 @@ def gmail_search_people(
     return _execute("GMAIL_SEARCH_PEOPLE", composio_user_id, arguments)
 
 
-def build_registry(agent_name: str) -> Dict[str, Callable[..., Any]]:  # noqa: ARG001
-    """Return Gmail tool callables. Agent name unused but kept for parity."""
-
-    return {
+def build_registry(agent_name: str) -> Dict[str, Callable[..., Any]]:
+    """Return Gmail tool callables. Execution agent gets filtered tools."""
+    
+    registry = {
         "gmail_create_draft": gmail_create_draft,
         "gmail_execute_draft": gmail_execute_draft,
         "gmail_delete_draft": gmail_delete_draft,
@@ -596,6 +592,12 @@ def build_registry(agent_name: str) -> Dict[str, Callable[..., Any]]:  # noqa: A
         "gmail_list_drafts": gmail_list_drafts,
         "gmail_search_people": gmail_search_people,
     }
+    
+    # Execution agent should use task_email_search instead of direct gmail_fetch_emails
+    if agent_name == "execution_agent":
+        registry.pop("gmail_fetch_emails", None)
+    
+    return registry
 
 
 __all__ = [
@@ -604,7 +606,6 @@ __all__ = [
     "gmail_create_draft",
     "gmail_execute_draft",
     "gmail_delete_draft",
-    "gmail_fetch_emails",
     "gmail_forward_email",
     "gmail_reply_to_thread",
     "gmail_get_contacts",

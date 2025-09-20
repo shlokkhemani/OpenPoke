@@ -2,8 +2,8 @@
 
 OpenPoke is a simplified, open-source take on [Interaction Company’s](https://interaction.co/about) [Poke](https://poke.com/) assistant—built to show how a multi-agent orchestration stack can feel genuinely useful. It keeps the handful of things Poke is great at (email triage, reminders, and persistent agents) while staying easy to spin up locally.
 
-- Multi-agent FastAPI backend that mirrors Poke’s interaction/execution split, powered by OpenRouter LLMs.
-- Gmail tooling, optional via Composio, for drafting/replying/forwarding without leaving chat.
+- Multi-agent FastAPI backend that mirrors Poke’s interaction/execution split, powered by [OpenRouter](https://openrouter.ai/).
+- Gmail tooling, optional via [Composio](https://composio.dev/), for drafting/replying/forwarding without leaving chat.
 - Trigger scheduler and background watchers for reminders and “important email” alerts.
 - Next.js web UI that proxies everything through the shared `.env`, so plugging in API keys is the only setup.
 
@@ -23,8 +23,8 @@ OpenPoke is a simplified, open-source take on [Interaction Company’s](https://
    cp .env.example .env
    ```
 3. **Fetch API keys and drop them into `.env`.**
-   - **OpenRouter**: create an account at [openrouter.ai](https://openrouter.ai/), generate an API key, and paste it into `OPENROUTER_API_KEY`.
-   - **Composio (optional Gmail tooling)**: sign in at [composio.com](https://www.composio.com/), create an API key, locate your Gmail auth config ID, and populate `COMPOSIO_API_KEY` / `COMPOSIO_GMAIL_AUTH_CONFIG_ID`.
+- **OpenRouter**: create an account at [openrouter.ai](https://openrouter.ai/), generate an API key, and paste it into `OPENROUTER_API_KEY`.
+- **Composio (optional Gmail tooling)**: sign in at [composio.dev](https://composio.dev/), create an API key, locate your Gmail auth config ID, and populate `COMPOSIO_API_KEY` / `COMPOSIO_GMAIL_AUTH_CONFIG_ID`.
 4. **(Recommended) create and activate a Python virtualenv:**
    ```bash
    python3 -m venv .venv

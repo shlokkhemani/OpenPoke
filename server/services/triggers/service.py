@@ -113,6 +113,10 @@ class TriggerService:
         if timezone_name is not None:
             fields["timezone"] = getattr(tz, "key", "UTC")
 
+        schedule_inputs_changed = any(
+            value is not None for value in (recurrence_rule, start_time, timezone_name)
+        )
+
         recurrence_source = (
             recurrence_rule if recurrence_rule is not None else existing.recurrence_rule
         )
@@ -124,10 +128,6 @@ class TriggerService:
             )
         else:
             stored_recurrence = recurrence_source
-
-        schedule_inputs_changed = any(
-            value is not None for value in (recurrence_rule, start_time, timezone_name)
-        )
 
         next_trigger_dt = (
             parse_iso(existing.next_trigger)

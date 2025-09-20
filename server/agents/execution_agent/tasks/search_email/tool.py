@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from server.config import get_settings
 from server.logging_config import logger
 from server.openrouter_client import request_chat_completion
 from server.services.execution_log import get_execution_agent_logs
 from server.services.gmail import _load_gmail_user_id, execute_gmail_tool
-from server.services.timezone_store import get_timezone_store
-
-from .email_cleaner import EmailTextCleaner
+from server.services.gmail_processing import (
+    EmailTextCleaner,
+    ProcessedEmail,
+    parse_gmail_fetch_response,
+)
 from .gmail_internal import GMAIL_FETCH_EMAILS_SCHEMA
 from .schemas import (
     GmailSearchEmail,
@@ -317,7 +317,12 @@ async def _perform_search(
             error=str(exc),
         )
 
-    parsed_emails, next_page_token = _parse_composio_messages(raw_result, query)
+    processed_emails, next_page_token = parse_gmail_fetch_response(
+        raw_result,
+        query=query,
+        cleaner=_EMAIL_CLEANER,
+    )
+    parsed_emails = [_processed_to_schema(email) for email in processed_emails]
 
     queries.append(query)
     for email in parsed_emails:
@@ -406,122 +411,25 @@ def _safe_json_dumps(payload: Any) -> str:
         return json.dumps({"repr": repr(payload)})
 
 
-def _parse_composio_messages(
-    raw_result: Any,
-    query: str,
-) -> Tuple[List[GmailSearchEmail], Optional[str]]:
-    """Parse Composio API response into structured email objects."""
-    emails: List[GmailSearchEmail] = []
-    next_page_token: Optional[str] = None
-    
-    # Normalize input to list of containers
-    containers = [raw_result] if isinstance(raw_result, dict) else (raw_result if isinstance(raw_result, list) else [])
-    
-    for container in containers:
-        if not isinstance(container, dict):
-            continue
-            
-        # Extract pagination token from data section
-        if data_section := container.get("data"):
-            if isinstance(data_section, dict) and next_page_token is None:
-                next_page_token = data_section.get("nextPageToken")
-                messages_block = data_section.get("messages")
-        else:
-            messages_block = container.get("messages")
-        
-        # Process messages if available
-        if isinstance(messages_block, list):
-            for message in messages_block:
-                if isinstance(message, dict):
-                    if email := _email_from_composio(message, query):
-                        emails.append(email)
-    
-    return emails, next_page_token
 
 
-def _convert_to_user_timezone(dt: datetime) -> datetime:
-    """Convert datetime to user's preferred timezone."""
-    if dt.tzinfo is None:
-        # Assume UTC if no timezone info
-        dt = dt.replace(tzinfo=ZoneInfo("UTC"))
-    
-    # Get user's timezone preference
-    store = get_timezone_store()
-    user_tz_name = store.get_timezone("UTC")
-    
-    try:
-        user_tz = ZoneInfo(user_tz_name)
-        return dt.astimezone(user_tz)
-    except ZoneInfoNotFoundError:
-        logger.warning(f"Invalid user timezone '{user_tz_name}', using UTC")
-        return dt.astimezone(ZoneInfo("UTC"))
-    except Exception as exc:
-        logger.warning(f"Timezone conversion failed: {exc}, using UTC")
-        return dt.astimezone(ZoneInfo("UTC"))
 
+def _processed_to_schema(email: ProcessedEmail) -> GmailSearchEmail:
+    """Convert shared processed email into GmailSearchEmail schema."""
 
-def _parse_timestamp(raw: Optional[str]) -> Optional[datetime]:
-    """Parse ISO timestamp string into datetime object and convert to user timezone."""
-    if not raw:
-        return None
-    try:
-        # Handle Z suffix for UTC timezone
-        normalized = raw.replace("Z", "+00:00") if raw.endswith("Z") else raw
-        dt = datetime.fromisoformat(normalized)
-        # Convert to user's timezone
-        return _convert_to_user_timezone(dt)
-    except ValueError:
-        return None
-
-
-def _email_from_composio(message: Dict[str, Any], query: str) -> Optional[GmailSearchEmail]:
-    """Convert Composio message dict to clean GmailSearchEmail object with text processing."""
-    # Extract core identifiers
-    message_id = (message.get("messageId") or message.get("id") or "").strip()
-    if not message_id:
-        logger.warning("Skipping email with missing message ID")
-        return None
-    
-    thread_id = message.get("threadId") or message.get("thread_id")
-    
-    # Extract metadata with proper defaults
-    subject = message.get("subject") or "No Subject"
-    sender = message.get("sender") or "Unknown Sender"
-    recipient = message.get("to") or "Unknown Recipient"
-    
-    # Parse timestamp and convert to user timezone
-    timestamp = _parse_timestamp(message.get("messageTimestamp"))
-    if not timestamp:
-        logger.warning(f"Email {message_id} has invalid timestamp, using current time in user timezone")
-        timestamp = _convert_to_user_timezone(datetime.now())
-    
-    # Extract labels
-    label_ids = list(message.get("labelIds") or [])
-    
-    # Process email content with the text cleaner
-    try:
-        clean_text = _EMAIL_CLEANER.clean_email_content(message)
-    except Exception as exc:
-        logger.error(f"Failed to clean email content for {message_id}: {exc}")
-        clean_text = "Error processing email content"
-    
-    # Extract attachment information
-    attachments = message.get("attachmentList", [])
-    has_attachments, attachment_count, attachment_filenames = _EMAIL_CLEANER.extract_attachment_info(attachments)
-    
     return GmailSearchEmail(
-        id=message_id,
-        thread_id=thread_id,
-        query=query,
-        subject=subject,
-        sender=sender,
-        recipient=recipient,
-        timestamp=timestamp,
-        label_ids=label_ids,
-        clean_text=clean_text,
-        has_attachments=has_attachments,
-        attachment_count=attachment_count,
-        attachment_filenames=attachment_filenames,
+        id=email.id,
+        thread_id=email.thread_id,
+        query=email.query,
+        subject=email.subject,
+        sender=email.sender,
+        recipient=email.recipient,
+        timestamp=email.timestamp,
+        label_ids=list(email.label_ids),
+        clean_text=email.clean_text,
+        has_attachments=email.has_attachments,
+        attachment_count=email.attachment_count,
+        attachment_filenames=list(email.attachment_filenames),
     )
 
 

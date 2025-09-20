@@ -20,8 +20,13 @@ yarn-error.log*
 __pycache__/
 *.pyc
 
-# Agent data logs
-server/data/conversation/*.log
-server/data/execution_agents/*.log
-server/data/execution_agents/roster.json
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
+# Data folder
+server/data/
+
+# Python virtual environment
 server/venv/

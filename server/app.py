@@ -13,7 +13,7 @@ from .logging_config import configure_logging, logger
 from .models import RootResponse
 from .routes import api_router
 from .routes.meta import PUBLIC_ENDPOINTS
-from .services import get_trigger_scheduler
+from .services import get_important_email_watcher, get_trigger_scheduler
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -81,12 +81,16 @@ def root(settings: Settings = Depends(get_settings)) -> RootResponse:
 async def _start_trigger_scheduler() -> None:
     scheduler = get_trigger_scheduler()
     await scheduler.start()
+    watcher = get_important_email_watcher()
+    await watcher.start()
 
 
 @app.on_event("shutdown")
 async def _stop_trigger_scheduler() -> None:
     scheduler = get_trigger_scheduler()
     await scheduler.stop()
+    watcher = get_important_email_watcher()
+    await watcher.stop()
 
 
 __all__ = ["app"]

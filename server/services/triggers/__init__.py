@@ -11,7 +11,7 @@ from .store import TriggerStore
 _settings = get_settings()
 _default_db_path = _settings.resolve_path(
     None,
-    Path(__file__).parent.parent / "data" / "triggers.db",
+    Path(__file__).parent.parent.parent / "data" / "triggers.db",
 )
 _trigger_store = TriggerStore(_default_db_path)
 _trigger_service = TriggerService(_trigger_store)

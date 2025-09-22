@@ -12,8 +12,8 @@ from server.services.execution import get_execution_agent_logs
 from server.services.gmail import (
     EmailTextCleaner,
     ProcessedEmail,
-    _load_gmail_user_id,
     execute_gmail_tool,
+    get_active_gmail_user_id,
     parse_gmail_fetch_response,
 )
 from .gmail_internal import GMAIL_FETCH_EMAILS_SCHEMA
@@ -68,7 +68,7 @@ def _validate_search_query(search_query: str) -> Optional[str]:
 
 def _validate_gmail_connection() -> Optional[str]:
     """Validate Gmail connection and return user ID or None."""
-    return _load_gmail_user_id()
+    return get_active_gmail_user_id()
 
 
 def _validate_openrouter_config() -> Tuple[Optional[str], Optional[str]]:

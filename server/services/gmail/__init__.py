@@ -1,10 +1,11 @@
 """Gmail-related service helpers."""
 
 from .client import (
+    disconnect_account,
     execute_gmail_tool,
     fetch_status,
+    get_active_gmail_user_id,
     initiate_connect,
-    _load_gmail_user_id,
 )
 from .importance_classifier import classify_email_importance
 from .importance_watcher import ImportantEmailWatcher, get_important_email_watcher
@@ -15,7 +16,8 @@ __all__ = [
     "execute_gmail_tool",
     "fetch_status",
     "initiate_connect",
-    "_load_gmail_user_id",
+    "disconnect_account",
+    "get_active_gmail_user_id",
     "classify_email_importance",
     "ImportantEmailWatcher",
     "get_important_email_watcher",

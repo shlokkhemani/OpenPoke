@@ -17,3 +17,11 @@ class GmailStatusPayload(BaseModel):
 
     user_id: Optional[str] = Field(default=None, alias="user_id")
     connection_request_id: Optional[str] = Field(default=None, alias="connection_request_id")
+
+
+class GmailDisconnectPayload(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    user_id: Optional[str] = Field(default=None, alias="user_id")
+    connection_id: Optional[str] = Field(default=None, alias="connection_id")
+    connection_request_id: Optional[str] = Field(default=None, alias="connection_request_id")

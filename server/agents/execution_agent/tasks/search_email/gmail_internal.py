@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from server.services.gmail import _load_gmail_user_id, execute_gmail_tool
+from server.services.gmail import execute_gmail_tool, get_active_gmail_user_id
 
 # Schema for the internal LLM to call gmail_fetch_emails
 GMAIL_FETCH_EMAILS_SCHEMA = {
@@ -65,7 +65,7 @@ def gmail_fetch_emails(
         "include_spam_trash": include_spam_trash,
         "verbose": verbose,
     }
-    composio_user_id = _load_gmail_user_id()
+    composio_user_id = get_active_gmail_user_id()
     if not composio_user_id:
         return {"error": "Gmail not connected. Please connect Gmail in settings first."}
     

@@ -34,16 +34,25 @@ OpenPoke is a simplified, open-source take on [Interaction Company’s](https://
    - Create an API key
    - Set up Gmail integration and get your auth config ID
    - Replace `your_composio_api_key_here` and `your_gmail_auth_config_id_here` in `.env`
-4. **(Recommended) create and activate a Python virtualenv:**
+4. **(Required) Create and activate a Python 3.10+ virtualenv:**
    ```bash
-   python3 -m venv .venv
+   # Ensure you're using Python 3.10+
+   python3.10 -m venv .venv
    source .venv/bin/activate
+   
+   # Verify Python version (should show 3.10+)
+   python --version
    ```
    On Windows (PowerShell):
    ```powershell
-   python -m venv .venv
+   # Use Python 3.10+ (adjust path as needed)
+   python3.10 -m venv .venv
    .\.venv\Scripts\Activate.ps1
+   
+   # Verify Python version
+   python --version
    ```
+
 5. **Install backend dependencies:**
    ```bash
    pip install -r server/requirements.txt

@@ -13,7 +13,9 @@ yarn-error.log*
 .server.pid
 
 # Envs
-.env*
+.env
+.env.local
+.env.*.local
 
 # OS
 .DS_Store

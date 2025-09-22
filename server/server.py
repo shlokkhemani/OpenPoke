@@ -24,15 +24,29 @@ def main() -> None:
     # Reduce uvicorn access log noise - only show warnings and errors
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("uvicorn").setLevel(logging.INFO)
+    # Reduce watchfiles noise during development
+    logging.getLogger("watchfiles.main").setLevel(logging.WARNING)
     
-    uvicorn.run(
-        app,
-        host=args.host,
-        port=args.port,
-        reload=args.reload,
-        log_level="info",
-        access_log=False,  # Disable access logs completely for cleaner output
-    )
+    if args.reload:
+        # For reload mode, use import string
+        uvicorn.run(
+            "server.app:app",
+            host=args.host,
+            port=args.port,
+            reload=args.reload,
+            log_level="info",
+            access_log=False,  # Disable access logs completely for cleaner output
+        )
+    else:
+        # For production mode, use app object directly
+        uvicorn.run(
+            app,
+            host=args.host,
+            port=args.port,
+            reload=args.reload,
+            log_level="info",
+            access_log=False,  # Disable access logs completely for cleaner output
+        )
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI invocation guard

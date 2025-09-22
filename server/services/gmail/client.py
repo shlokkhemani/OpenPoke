@@ -41,12 +41,8 @@ def get_active_gmail_user_id() -> Optional[str]:
 
 
 def _gmail_import_client():
-    try:
-        from composio import Composio  # type: ignore
-
-        return Composio
-    except Exception as exc:  # pragma: no cover - optional dependency
-        raise RuntimeError("Composio SDK not installed on server. pip install composio") from exc
+    from composio import Composio  # type: ignore
+    return Composio
 
 
 # Get or create a singleton Composio client instance with thread-safe initialization

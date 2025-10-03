@@ -8,6 +8,7 @@ import { ChatMessages } from '@/components/chat/ChatMessages';
 import { ErrorBanner } from '@/components/chat/ErrorBanner';
 import { useAutoScroll } from '@/components/chat/useAutoScroll';
 import type { ChatBubble } from '@/components/chat/types';
+import { playNotificationSound, updateNotificationSettings } from '@/utils/notificationSound';
 
 const POLL_INTERVAL_MS = 1500;
 
@@ -43,6 +44,8 @@ export default function Page() {
   const [messages, setMessages] = useState<ChatBubble[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+  const [previousAssistantMessageCount, setPreviousAssistantMessageCount] = useState(0);
+  const [showNotificationIndicator, setShowNotificationIndicator] = useState(false);
   const { scrollContainerRef, handleScroll } = useAutoScroll({
     items: messages,
     isWaiting: isWaitingForResponse,
@@ -50,17 +53,42 @@ export default function Page() {
   const openSettings = useCallback(() => setOpen(true), [setOpen]);
   const closeSettings = useCallback(() => setOpen(false), [setOpen]);
 
+  // Function to detect new assistant messages and play notification sound
+  const checkForNewAssistantMessages = useCallback((newMessages: ChatBubble[]) => {
+    const assistantMessages = newMessages.filter(msg => msg.role === 'assistant');
+    const currentAssistantCount = assistantMessages.length;
+    
+    // If we have more assistant messages than before, play notification sound
+    if (currentAssistantCount > previousAssistantMessageCount && previousAssistantMessageCount > 0) {
+      // Update notification settings and play sound
+      updateNotificationSettings({
+        enabled: settings.notificationSoundEnabled,
+        volume: settings.notificationSoundVolume
+      });
+      playNotificationSound().catch((error: any) => {
+        console.warn('Failed to play notification sound:', error);
+      });
+      
+      // Show visual notification indicator
+      setShowNotificationIndicator(true);
+    }
+    
+    setPreviousAssistantMessageCount(currentAssistantCount);
+  }, [previousAssistantMessageCount, settings.notificationSoundEnabled, settings.notificationSoundVolume]);
+
   const loadHistory = useCallback(async () => {
     try {
       const res = await fetch('/api/chat/history', { cache: 'no-store' });
       if (!res.ok) return;
       const data = await res.json();
-      setMessages(toBubbles(data));
+      const newMessages = toBubbles(data);
+      setMessages(newMessages);
+      checkForNewAssistantMessages(newMessages);
     } catch (err: any) {
       if (err?.name === 'AbortError') return;
       console.error('Failed to load chat history', err);
     }
-  }, []);
+  }, [checkForNewAssistantMessages]);
 
   useEffect(() => {
     void loadHistory();
@@ -168,6 +196,7 @@ export default function Page() {
               if (hasAssistantResponse) {
                 // We got the assistant response, update messages and stop loading
                 setMessages(currentMessages);
+                checkForNewAssistantMessages(currentMessages);
                 setIsWaitingForResponse(false);
                 return;
               }
@@ -226,6 +255,7 @@ export default function Page() {
   }, [setInput]);
 
   const clearError = useCallback(() => setError(null), [setError]);
+  const resetNotificationIndicator = useCallback(() => setShowNotificationIndicator(false), []);
 
   return (
     <main className="chat-bg min-h-screen p-4 sm:p-6">
@@ -238,6 +268,8 @@ export default function Page() {
             isWaitingForResponse={isWaitingForResponse}
             scrollContainerRef={scrollContainerRef}
             onScroll={handleScroll}
+            showNotificationIndicator={showNotificationIndicator}
+            onNotificationIndicatorReset={resetNotificationIndicator}
           />
 
           <div className="border-t border-gray-200 p-3">

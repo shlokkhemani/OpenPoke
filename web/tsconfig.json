@@ -24,6 +24,9 @@
       ],
       "@/lib/*": [
         "lib/*"
+      ],
+      "@/utils/*": [
+        "utils/*"
       ]
     },
     "plugins": [

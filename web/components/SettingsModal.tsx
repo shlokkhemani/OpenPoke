@@ -1,17 +1,30 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { playTestSound, updateNotificationSettings } from '@/utils/notificationSound';
 
 export type Settings = {
   timezone: string;
+  notificationSoundEnabled: boolean;
+  notificationSoundVolume: number;
 };
 
 export function useSettings() {
-  const [settings, setSettings] = useState<Settings>({ timezone: '' });
+  const [settings, setSettings] = useState<Settings>({ 
+    timezone: '', 
+    notificationSoundEnabled: true, 
+    notificationSoundVolume: 0.7
+  });
 
   useEffect(() => {
     try {
       const timezone = localStorage.getItem('user_timezone') || '';
-      setSettings({ timezone });
+      const notificationSoundEnabled = localStorage.getItem('notification_sound_enabled') !== 'false';
+      const notificationSoundVolume = parseFloat(localStorage.getItem('notification_sound_volume') || '0.7');
+      setSettings({ 
+        timezone, 
+        notificationSoundEnabled, 
+        notificationSoundVolume: isNaN(notificationSoundVolume) ? 0.7 : notificationSoundVolume
+      });
     } catch {}
   }, []);
 
@@ -19,6 +32,8 @@ export function useSettings() {
     setSettings(s);
     try {
       localStorage.setItem('user_timezone', s.timezone);
+      localStorage.setItem('notification_sound_enabled', s.notificationSoundEnabled.toString());
+      localStorage.setItem('notification_sound_volume', s.notificationSoundVolume.toString());
     } catch {}
   }, []);
 
@@ -110,6 +125,8 @@ export default function SettingsModal({
   onSave: (s: Settings) => void;
 }) {
   const [timezone, setTimezone] = useState(settings.timezone);
+  const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(settings.notificationSoundEnabled);
+  const [notificationSoundVolume, setNotificationSoundVolume] = useState(settings.notificationSoundVolume);
   const [connectingGmail, setConnectingGmail] = useState(false);
   const [isRefreshingGmail, setIsRefreshingGmail] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
@@ -350,6 +367,8 @@ export default function SettingsModal({
 
   useEffect(() => {
     setTimezone(settings.timezone);
+    setNotificationSoundEnabled(settings.notificationSoundEnabled);
+    setNotificationSoundVolume(settings.notificationSoundVolume);
   }, [settings]);
 
   useEffect(() => {
@@ -386,6 +405,61 @@ export default function SettingsModal({
             <p className="mt-1 text-xs text-gray-500">
               {timezone ? 'Auto-detected from browser. Edit to override.' : 'Will be auto-detected on next page load.'}
             </p>
+          </div>
+          
+          <div>
+            <div className="mb-3 text-sm font-medium text-gray-700">Notifications</div>
+            <div className="rounded-xl border border-gray-200 bg-white/70 p-4 shadow-sm">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">Message Notifications</div>
+                    <p className="text-xs text-gray-600">Play a sound when you receive new messages from the agent</p>
+                  </div>
+                  <label className="relative inline-flex cursor-pointer items-center">
+                    <input
+                      type="checkbox"
+                      checked={notificationSoundEnabled}
+                      onChange={(e) => setNotificationSoundEnabled(e.target.checked)}
+                      className="peer sr-only"
+                    />
+                    <div className="peer h-6 w-11 rounded-full bg-gray-200 after:absolute after:top-[2px] after:left-[2px] after:h-5 after:w-5 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-brand-600 peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-brand-300"></div>
+                  </label>
+                </div>
+                
+                {notificationSoundEnabled && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-gray-700">Volume</label>
+                      <span className="text-xs text-gray-500">{Math.round(notificationSoundVolume * 100)}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={notificationSoundVolume}
+                      onChange={(e) => setNotificationSoundVolume(parseFloat(e.target.value))}
+                      className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200"
+                    />
+                    
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        updateNotificationSettings({ 
+                          enabled: notificationSoundEnabled, 
+                          volume: notificationSoundVolume
+                        });
+                        await playTestSound();
+                      }}
+                      className="rounded-md border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                    >
+                      Test Sound
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
           <div className="pt-2">
             <div className="mb-1 text-sm font-medium text-gray-700">Integrations</div>
@@ -474,7 +548,11 @@ export default function SettingsModal({
           <button
             className="btn"
             onClick={() => {
-              onSave({ timezone });
+              onSave({ 
+                timezone, 
+                notificationSoundEnabled, 
+                notificationSoundVolume
+              });
               onClose();
             }}
           >

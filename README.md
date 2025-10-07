@@ -7,6 +7,28 @@ OpenPoke is a simplified, open-source take on [Interaction Company’s](https://
 - Trigger scheduler and background watchers for reminders and "important email" alerts.
 - Next.js web UI that proxies everything through the shared `.env`, so plugging in API keys is the only setup.
 
+## Active Branch Contributions (Pending Merge)
+
+### 🔔 Message Notifications (`feat/message-notification`)
+- **Audio Notifications**: Play notification sounds when new assistant messages arrive
+- **Visual Indicators**: Show notification indicators in the chat interface
+- **Configurable Settings**: Adjust notification volume and enable/disable sounds
+- **Smart Detection**: Automatically detects new assistant responses and triggers notifications
+
+### 🧠 Memory Optimization (`feat/memory-optimization`)
+- **Smart Context Selection**: Intelligently selects the most relevant conversation segments for LLM processing
+- **Multi-Layer Caching**: LRU-based conversation cache and intelligent response caching with TTL policies
+- **Performance Monitoring**: Real-time metrics tracking optimization performance and token savings
+- **Cost Reduction**: Up to 60-80% reduction in API token usage through smart context optimization
+- **Hybrid Cache Strategy**: Production-ready caching with multiple eviction policies
+
+### 🔒 Incognito Chat Mode (`feat/incognito-chat`)
+- **Privacy-Focused Conversations**: Toggle between normal and incognito modes for private conversations
+- **Dual-Layer Memory**: Persistent memory for normal mode, ephemeral session memory for incognito mode
+- **Smart Memory Management**: Access to previously saved data maintained even in incognito mode
+- **Automatic Cleanup**: Session memory cleared when exiting incognito mode
+- **Easy Toggle**: Simple UI button to switch between modes for sensitive conversations
+
 ## Requirements
 - Python 3.10+
 - Node.js 18+

@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: openpoke-backend
+    ports:
+      - "8001:8001"
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - COMPOSIO_API_KEY=${COMPOSIO_API_KEY}
+      - COMPOSIO_GMAIL_AUTH_CONFIG_ID=${COMPOSIO_GMAIL_AUTH_CONFIG_ID}
+      - OPENPOKE_HOST=0.0.0.0
+      - OPENPOKE_PORT=8001
+      - OPENPOKE_CORS_ALLOW_ORIGINS=*
+    volumes:
+      - openpoke-data:/app/server/data
+    restart: unless-stopped
+    networks:
+      - openpoke-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/api/v1/health').read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    container_name: openpoke-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - PY_SERVER_URL=http://backend:8001
+      - NODE_ENV=production
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - openpoke-network
+
+volumes:
+  openpoke-data:
+    driver: local
+
+networks:
+  openpoke-network:
+    driver: bridge
+

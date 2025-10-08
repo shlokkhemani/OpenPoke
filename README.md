@@ -7,34 +7,28 @@ OpenPoke is a simplified, open-source take on [Interaction Company’s](https://
 - Trigger scheduler and background watchers for reminders and "important email" alerts.
 - Next.js web UI that proxies everything through the shared `.env`, so plugging in API keys is the only setup.
 
-## Active Branch Contributions (Pending Merge)
-
-### 🔔 Message Notifications (`feat/message-notification`)
-- **Audio Notifications**: Play notification sounds when new assistant messages arrive
-- **Visual Indicators**: Show notification indicators in the chat interface
-- **Configurable Settings**: Adjust notification volume and enable/disable sounds
-- **Smart Detection**: Automatically detects new assistant responses and triggers notifications
-
-### 🧠 Memory Optimization (`feat/memory-optimization`)
-- **Smart Context Selection**: Intelligently selects the most relevant conversation segments for LLM processing
-- **Multi-Layer Caching**: LRU-based conversation cache and intelligent response caching with TTL policies
-- **Performance Monitoring**: Real-time metrics tracking optimization performance and token savings
-- **Cost Reduction**: Up to 60-80% reduction in API token usage through smart context optimization
-- **Hybrid Cache Strategy**: Production-ready caching with multiple eviction policies
-
-### 🔒 Incognito Chat Mode (`feat/incognito-chat`)
-- **Privacy-Focused Conversations**: Toggle between normal and incognito modes for private conversations
-- **Dual-Layer Memory**: Persistent memory for normal mode, ephemeral session memory for incognito mode
-- **Smart Memory Management**: Access to previously saved data maintained even in incognito mode
-- **Automatic Cleanup**: Session memory cleared when exiting incognito mode
-- **Easy Toggle**: Simple UI button to switch between modes for sensitive conversations
+### 🐳 Docker Support (`feat/docker`)
+- **One-Command Deployment**: Start the entire stack with `docker-compose up`
+- **Multi-Container Architecture**: Separate backend and frontend containers for better scaling
+- **Data Persistence**: Automatic volume management for SQLite database and logs
+- **Development Mode**: Hot-reload support for rapid development
+- **Production Ready**: Optimized images with security best practices and health checks
+- **Comprehensive Testing**: Full test suite for Docker setup validation
 
 ## Requirements
+
+### Option 1: Docker (Recommended)
+- Docker 20.10+
+- Docker Compose 2.0+
+
+### Option 2: Local Development
 - Python 3.10+
 - Node.js 18+
 - npm 9+
 
 ## Quickstart
+
+**Base setup to get Open Router API key and Composio key**
 1. **Clone and enter the repo.**
    ```bash
    git clone https://github.com/shlokkhemani/OpenPoke
@@ -56,7 +50,39 @@ OpenPoke is a simplified, open-source take on [Interaction Company’s](https://
    - Create an API key
    - Set up Gmail integration and get your auth config ID
    - Replace `your_composio_api_key_here` and `your_gmail_auth_config_id_here` in `.env`
-4. **(Required) Create and activate a Python 3.10+ virtualenv:**
+
+### 🐳 Docker Deployment (Easiest)
+
+**Perfect for: Self-hosters, quick testing, and production deployments**
+
+1. **Configure environment variables:**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your API keys
+   ```
+
+2. **Start with Docker Compose:**
+   ```bash
+   docker-compose up -d
+   ```
+
+3. **Access the application:**
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:8001
+   - API Docs: http://localhost:8001/docs
+
+4. **View logs:**
+   ```bash
+   docker-compose logs -f
+   ```
+
+**That's it!** Your OpenPoke instance is running. See [DEPLOYMENT.md](DEPLOYMENT.md) for advanced configuration, backup, and production setup.
+
+---
+
+### 💻 Local Development Setup
+
+1. **(Required) Create and activate a Python 3.10+ virtualenv:**
    ```bash
    # Ensure you're using Python 3.10+
    python3.10 -m venv .venv
@@ -75,23 +101,28 @@ OpenPoke is a simplified, open-source take on [Interaction Company’s](https://
    python --version
    ```
 
-5. **Install backend dependencies:**
+2. **Install backend dependencies:**
    ```bash
    pip install -r server/requirements.txt
    ```
-6. **Install frontend dependencies:**
+3. **Install frontend dependencies:**
    ```bash
    npm install --prefix web
    ```
-7. **Start the FastAPI server:**
+4. **Start the FastAPI server:**
    ```bash
    python -m server.server --reload
    ```
-8. **Start the Next.js app (new terminal):**
+5. **Start the Next.js app (new terminal):**
    ```bash
    npm run dev --prefix web
    ```
-9. **Connect Gmail for email workflows.** With both services running, open [http://localhost:3000](http://localhost:3000), head to *Settings → Gmail*, and complete the Composio OAuth flow. This step is required for email drafting, replies, and the important-email monitor.
+
+---
+
+### **Connect Gmail for email workflows.**
+
+ With both services running, open [http://localhost:3000](http://localhost:3000), head to *Settings → Gmail*, and complete the Composio OAuth flow. This step is required for email drafting, replies, and the important-email monitor.
 
 The web app proxies API calls to the Python server using the values in `.env`, so keeping both processes running is required for end-to-end flows.
 

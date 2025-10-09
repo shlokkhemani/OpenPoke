@@ -1,0 +1,5 @@
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+requests>=2.31.0
+docker>=6.1.0
+

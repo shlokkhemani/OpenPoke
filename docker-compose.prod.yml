@@ -1,0 +1,120 @@
+# Production Docker Compose Configuration for OpenPoke
+# This file includes production-ready security settings
+
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: openpoke-backend-prod
+    ports:
+      - "127.0.0.1:8001:8001"  # Only bind to localhost - use reverse proxy
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - COMPOSIO_API_KEY=${COMPOSIO_API_KEY}
+      - COMPOSIO_GMAIL_AUTH_CONFIG_ID=${COMPOSIO_GMAIL_AUTH_CONFIG_ID}
+      - OPENPOKE_HOST=0.0.0.0
+      - OPENPOKE_PORT=8001
+      # IMPORTANT: Set this to your actual domain in production
+      - OPENPOKE_CORS_ALLOW_ORIGINS=${OPENPOKE_CORS_ALLOW_ORIGINS:-https://yourdomain.com}
+      # Disable API docs in production (optional)
+      - OPENPOKE_ENABLE_DOCS=${OPENPOKE_ENABLE_DOCS:-0}
+    volumes:
+      - openpoke-data:/app/server/data
+    restart: unless-stopped
+    networks:
+      - openpoke-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/api/v1/health').read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Resource limits (adjust based on your needs)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    read_only: false  # Set to true if you can make /app read-only
+    tmpfs:
+      - /tmp
+
+  frontend:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    container_name: openpoke-frontend-prod
+    ports:
+      - "127.0.0.1:3000:3000"  # Only bind to localhost - use reverse proxy
+    environment:
+      - PY_SERVER_URL=http://backend:8001
+      - NODE_ENV=production
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - openpoke-network
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+
+volumes:
+  openpoke-data:
+    driver: local
+    # Optional: Use a specific mount point
+    # driver_opts:
+    #   type: none
+    #   o: bind
+    #   device: /path/to/data
+
+networks:
+  openpoke-network:
+    driver: bridge
+    # Optional: Enable encryption for network traffic
+    # driver_opts:
+    #   encrypted: "true"
+
+# Optional: Use Docker secrets (recommended for production)
+# Uncomment and configure:
+# secrets:
+#   openrouter_key:
+#     external: true
+#   composio_key:
+#     external: true
+#   composio_auth_config:
+#     external: true
+

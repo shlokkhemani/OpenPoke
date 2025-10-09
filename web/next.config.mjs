@@ -11,6 +11,10 @@ const { loadEnvConfig } = envPackage;
 loadEnvConfig?.(repoRoot, isDevelopment);
 
 /** @type {import('next').NextConfig} */
-const nextConfig = {};
+const nextConfig = {
+  // Enable standalone output for Docker
+  // This creates a minimal production build with only necessary files
+  output: 'standalone',
+};
 
 export default nextConfig;

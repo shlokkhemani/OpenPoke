@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: openpoke-backend-dev
+    volumes:
+      - ./server:/app/server
+      - openpoke-data:/app/server/data
+    ports:
+      - "8001:8001"
+    command: python -m server.server --reload
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - COMPOSIO_API_KEY=${COMPOSIO_API_KEY}
+      - COMPOSIO_GMAIL_AUTH_CONFIG_ID=${COMPOSIO_GMAIL_AUTH_CONFIG_ID}
+      - OPENPOKE_HOST=0.0.0.0
+      - OPENPOKE_PORT=8001
+      - OPENPOKE_CORS_ALLOW_ORIGINS=*
+    networks:
+      - openpoke-network
+
+  frontend:
+    image: node:18-alpine
+    container_name: openpoke-frontend-dev
+    working_dir: /app
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      - PY_SERVER_URL=http://backend:8001
+      - NODE_ENV=development
+    command: sh -c "npm install && npm run dev"
+    depends_on:
+      - backend
+    networks:
+      - openpoke-network
+
+volumes:
+  openpoke-data:
+
+networks:
+  openpoke-network:
+    driver: bridge
+
